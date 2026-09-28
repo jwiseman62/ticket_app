@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import * as api from '../api.js'
+import EmptyState from '../components/EmptyState.jsx'
+import { SkeletonStatCards } from '../components/Skeleton.jsx'
+import { smartTime, fullTimestamp } from '../utils/dates.js'
 
 // ── Sub-components ────────────────────────────────────────────────── //
 
@@ -60,7 +63,16 @@ export default function Home() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <div className="page-loading">Loading…</div>
+  if (loading) {
+    return (
+      <div className="home-page">
+        <div className="home-header">
+          <div><h1 className="home-title">Loading…</h1></div>
+        </div>
+        <SkeletonStatCards />
+      </div>
+    )
+  }
   if (error)   return <div className="alert alert-error page-error">{error}</div>
 
   const statusData   = Object.entries(stats.by_status).map(([label, value]) => ({ label, value }))
@@ -123,9 +135,12 @@ export default function Home() {
         </div>
 
         {stats.recent.length === 0 ? (
-          <p className="list-placeholder">
-            No tickets yet. <Link to="/tickets">Create one.</Link>
-          </p>
+          <EmptyState
+            icon="📋"
+            title="No tickets yet"
+            body="Once someone files a ticket it'll appear here, newest first."
+            action={<Link to="/new" className="btn btn-sm btn-primary">File a ticket</Link>}
+          />
         ) : (
           <>
             {/* Desktop table */}
@@ -158,7 +173,9 @@ export default function Home() {
                       </span>
                     </td>
                     <td>{t.requester}</td>
-                    <td className="text-muted">{t.updated_at?.slice(0, 10)}</td>
+                    <td className="text-muted" title={fullTimestamp(t.updated_at)}>
+                      {smartTime(t.updated_at)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -175,7 +192,7 @@ export default function Home() {
                   </div>
                   <div className="recent-mobile-title">{t.title}</div>
                   <div className="recent-mobile-meta">
-                    {t.requester} · {t.updated_at?.slice(0, 10)}
+                    {t.requester} · {smartTime(t.updated_at)}
                   </div>
                 </Link>
               ))}

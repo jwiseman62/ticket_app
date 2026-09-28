@@ -1,9 +1,13 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function Login() {
-  const { login } = useAuth()
+  const { login }    = useAuth()
+  const navigate     = useNavigate()
+  const location     = useLocation()
+  // Set by Register after a successful signup: "Account created. Please sign in."
+  const notice       = location.state?.message
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error,    setError]    = useState('')
@@ -15,6 +19,7 @@ export default function Login() {
     setLoading(true)
     try {
       await login(username, password)
+      navigate('/dashboard', { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -25,11 +30,12 @@ export default function Login() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1 className="auth-title">🎫 IT Ticket System</h1>
+        <Link to="/" className="auth-brand">🎫 IT Ticket System</Link>
         <h2 className="auth-subtitle">Sign In</h2>
 
         <form onSubmit={handleSubmit} className="auth-form">
-          {error && <div className="alert alert-error">{error}</div>}
+          {notice && <div className="alert alert-success">{notice}</div>}
+          {error  && <div className="alert alert-error">{error}</div>}
 
           <div className="form-group">
             <label htmlFor="username">Username</label>
@@ -54,6 +60,8 @@ export default function Login() {
 
         <p className="auth-footer">
           No account? <Link to="/register">Register</Link>
+          &nbsp;·&nbsp;
+          <Link to="/">Back to Home</Link>
         </p>
       </div>
     </div>
