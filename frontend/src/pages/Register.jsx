@@ -54,7 +54,7 @@ export default function Register() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1 className="auth-title">🎫 IT Ticket System</h1>
+        <h1 className="auth-title">Tech Help</h1>
         <h2 className="auth-subtitle">Create Account</h2>
 
         <form onSubmit={handleSubmit} className="auth-form">
