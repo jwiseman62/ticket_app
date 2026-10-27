@@ -87,7 +87,7 @@ export default function Landing() {
           <div className="section-label">About</div>
           <h2 className="section-title">Built for IT teams of any size</h2>
           <p className="section-body">
-            Tech Mate gives your helpdesk a structured way to receive, track,
+            Tech Help gives your helpdesk a structured way to receive, track,
             and resolve requests. Whether you're a one-person IT department or a
             larger team, the role-based workflow keeps things clear — requesters
             submit issues, technicians work through them, and nothing falls through
