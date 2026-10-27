@@ -163,7 +163,7 @@ export default function Landing() {
       {/* Footer */}
       <footer className="landing-footer">
         <div className="footer-inner">
-          <span className="footer-brand">🎫 Tech Help</span>
+          <span className="footer-brand">Tech Help</span>
           <div className="footer-links">
             <Link to="/login">Sign In</Link>
             <Link to="/register">Register</Link>
