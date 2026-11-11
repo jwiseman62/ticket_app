@@ -1,0 +1,48 @@
+# Render Blueprint — backend API only.
+# The frontend deploys separately to Vercel (see DEPLOYMENT.md).
+#
+# Create via Render dashboard -> New -> Blueprint, pointed at this repo.
+
+services:
+  - type: web
+    name: tech-help-api
+    runtime: python
+    plan: free              # spins down when idle; `starter` removes that
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Free tier has no shell access, so seed on boot. Without --reset,
+    # seed_demo.py no-ops when accounts already exist, so this is safe
+    # to run on every start: the first boot populates, later boots skip.
+    startCommand: python seed_demo.py && uvicorn main:app --host 0.0.0.0 --port $PORT
+
+    # Render restarts the service if this stops responding.
+    healthCheckPath: /health
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+
+      # Generated once by Render and kept stable across deploys, so sessions
+      # survive a redeploy.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      - key: DEMO_RESET_TOKEN
+        generateValue: true
+
+      # Free tier has no persistent disk — keep attachments in the database.
+      - key: STORE_UPLOADS_IN_DB
+        value: "true"
+      - key: MAX_UPLOAD_MB
+        value: "2"
+
+      - key: DEMO_MODE
+        value: "true"
+
+      # Set these two in the Render dashboard after the frontend exists.
+      # DATABASE_URL comes from Neon (do NOT use Render's free Postgres —
+      # it expires after 30 days).
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

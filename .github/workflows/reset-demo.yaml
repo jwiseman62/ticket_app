@@ -1,0 +1,52 @@
+# Nightly reset of the public demo.
+#
+# Visitors can delete tickets, change roles and register junk accounts —
+# which is good, it means they can actually try the thing. This puts it back
+# every night so the demo is always in a known-good state.
+#
+# Setup (one time):
+#   Repo -> Settings -> Secrets and variables -> Actions
+#     Secret   DEMO_RESET_TOKEN   = the value from Render's env vars
+#     Variable DEMO_API_URL       = https://your-api.onrender.com
+
+name: Reset demo data
+
+on:
+  schedule:
+    # 08:00 UTC = 02:00 America/Chicago (CST). GitHub runs schedules in UTC
+    # and does not follow daylight saving, so this drifts by an hour in summer.
+    - cron: "0 8 * * *"
+  workflow_dispatch:        # lets you trigger it by hand from the Actions tab
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake the API
+        # The free tier spins down when idle. Without this the reset request
+        # itself would be the one absorbing the cold start and may time out.
+        run: |
+          echo "Waking ${{ vars.DEMO_API_URL }} ..."
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+                   "${{ vars.DEMO_API_URL }}/health" || true)
+            if [ "$code" = "200" ]; then echo "awake after $i attempt(s)"; exit 0; fi
+            echo "  attempt $i: HTTP $code, retrying in 10s"
+            sleep 10
+          done
+          echo "::warning::API did not wake within ~100s; trying the reset anyway"
+
+      - name: Reset demo data
+        run: |
+          response=$(curl -s -w "\n%{http_code}" --max-time 120 -X POST \
+            -H "X-Reset-Token: ${{ secrets.DEMO_RESET_TOKEN }}" \
+            "${{ vars.DEMO_API_URL }}/admin/reset-demo")
+          body=$(echo "$response" | sed '$d')
+          code=$(echo "$response" | tail -n1)
+          echo "HTTP $code"
+          echo "$body"
+          if [ "$code" != "200" ]; then
+            echo "::error::Reset failed with HTTP $code."
+            echo "::error::404 usually means DEMO_MODE is off or the token is wrong."
+            exit 1
+          fi

@@ -1,0 +1,41 @@
+# ── Secrets and local config ─────────────────────────────────────── #
+# .env.example files ARE committed; the real .env files never are.
+.env
+.env.*
+!.env.example
+
+# Generated on first boot and used to sign every JWT. If this is committed,
+# anyone with the repo can mint valid tokens for your deployment.
+backend/.jwt_secret
+
+# ── Local data ───────────────────────────────────────────────────── #
+*.db
+*.sqlite
+*.sqlite3
+backend/uploads/
+
+# ── Python ───────────────────────────────────────────────────────── #
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# ── Node ─────────────────────────────────────────────────────────── #
+node_modules/
+dist/
+.vite/
+npm-debug.log*
+yarn-error.log*
+
+# ── Editors and OS ───────────────────────────────────────────────── #
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# ── Build / deploy ───────────────────────────────────────────────── #
+.vercel

@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+python-jose[cryptography]
+python-multipart
+
+# PostgreSQL driver. Not needed for local SQLite development, but harmless
+# to install, and required by any deployment using DATABASE_URL=postgres...
+psycopg[binary]
