@@ -4654,3 +4654,142 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
   .ann-card-actions .btn { flex: 1; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  Review-before-submit dialog                                        */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+.review-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  z-index: 1000;
+  animation: fadeIn .12s ease;
+}
+
+.review-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .3);
+  padding: 1.25rem;
+  width: 100%;
+  max-width: 34rem;
+  /* Long surveys must not push the buttons off-screen. */
+  max-height: calc(100vh - 2.5rem);
+  overflow-y: auto;
+}
+
+.review-title {
+  margin: 0 0 .25rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.review-sub {
+  margin: 0 0 1rem;
+  font-size: .8rem;
+  color: var(--text-muted);
+}
+
+.review-section {
+  margin: 1.1rem 0 .5rem;
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+}
+
+.review-list { margin: 0; }
+
+.review-row {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: .6rem;
+  padding: .45rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-row:last-child { border-bottom: none; }
+
+.review-row dt {
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.review-row dd {
+  margin: 0;
+  font-size: .82rem;
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Typed into a textarea, so line breaks are the author's. */
+.review-pre { white-space: pre-wrap; }
+
+.review-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.review-note { color: var(--text-muted); font-size: .75rem; }
+
+.review-actions {
+  display: flex;
+  gap: .5rem;
+  margin-top: 1.25rem;
+  /* Sticks to the bottom of a scrolled dialog so the buttons are always
+     reachable without hunting for them. */
+  position: sticky;
+  bottom: -1.25rem;
+  background: var(--surface);
+  padding: .75rem 0 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  Email verification code entry                                      */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+.verify-panel { margin-bottom: .5rem; }
+
+.verify-lead {
+  margin: 0 0 1rem;
+  font-size: .85rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* Wide, spaced digits — these are read off a phone and typed one at a
+   time, so legibility matters more than compactness. */
+.verify-code-input {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 1.5rem;
+  letter-spacing: .4em;
+  text-align: center;
+  /* letter-spacing adds a trailing gap, which pushes the text visually
+     off-centre; half of it back as padding re-centres it. */
+  text-indent: .4em;
+}
+
+.verify-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: .5rem;
+  margin-top: .85rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 560px) {
+  .review-row { grid-template-columns: 1fr; gap: .15rem; }
+  .review-actions { flex-direction: column-reverse; }
+  .review-actions .btn { width: 100%; }
+  .verify-actions .btn { flex: 1; }
+}

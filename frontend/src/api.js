@@ -58,6 +58,10 @@ function extractError(payload, fallback) {
   const detail = payload?.detail
   if (!detail) return fallback
   if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object' && !Array.isArray(detail)
+      && typeof detail.message === 'string') {
+    return detail.message
+  }
   if (Array.isArray(detail)) {
     return detail
       .map((d) => {
@@ -99,7 +103,14 @@ async function request(path, options = {}) {
   const res = await safeFetch(`${BASE}${path}`, { ...options, headers })
   if (!res.ok) {
     const payload = await res.json().catch(() => null)
-    throw new Error(extractError(payload, res.statusText || 'Request failed'))
+    const err = new Error(extractError(payload, res.statusText || 'Request failed'))
+    // Some failures carry structured data the caller needs to act on — the
+    // verification challenge, for instance, returns the username and a
+    // masked address. extractError flattens to a string, so keep the
+    // original alongside it.
+    err.status = res.status
+    err.detail = payload?.detail
+    throw err
   }
   const ct = res.headers.get('content-type') ?? ''
   return ct.includes('application/json') ? res.json() : res
@@ -116,7 +127,14 @@ export function login(username, password) {
   }).then(async (res) => {
     if (!res.ok) {
       const payload = await res.json().catch(() => null)
-      throw new Error(extractError(payload, 'Login failed'))
+      const err = new Error(extractError(payload, 'Login failed'))
+      // Login has its own fetch rather than going through request(), so it
+      // has to attach the structured detail itself. The verification
+      // challenge arrives this way: a 403 whose detail is an object, not a
+      // message to show the user.
+      err.status = res.status
+      err.detail = payload?.detail
+      throw err
     }
     return res.json()
   })
@@ -203,6 +221,20 @@ export async function exportCsv(params = {}) {
 }
 
 export const getStats = () => request('/stats')
+
+// ── Email verification ────────────────────────────────────────────── //
+
+export const verifyCode = (username, code) =>
+  request('/auth/verify', {
+    method: 'POST',
+    body: JSON.stringify({ username, code }),
+  })
+
+export const resendCode = (username) =>
+  request('/auth/resend-code', {
+    method: 'POST',
+    body: JSON.stringify({ username }),
+  })
 
 // ── Announcements ─────────────────────────────────────────────────── //
 //

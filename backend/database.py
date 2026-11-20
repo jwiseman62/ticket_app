@@ -86,6 +86,7 @@ def get_db():
 
 # column name -> SQL type used in ALTER TABLE
 _TICKET_COLUMNS = {
+    "ref":        "VARCHAR DEFAULT ''",
     "category":   "VARCHAR DEFAULT ''",
     "survey":     "JSON",
     "closed_at":  "VARCHAR DEFAULT ''",
@@ -96,6 +97,7 @@ _TICKET_COLUMNS = {
 # Indexes that ALTER TABLE ... ADD COLUMN does not create. Every archive and
 # trash query filters on these two, so they matter once the table grows.
 _INDEXES = [
+    ("ix_tickets_ref",        "tickets", "ref"),
     ("ix_tickets_closed_at",  "tickets", "closed_at"),
     ("ix_tickets_deleted_at", "tickets", "deleted_at"),
 ]
@@ -106,6 +108,11 @@ _USER_COLUMNS = {
     "failed_logins":  "INTEGER DEFAULT 0",
     "locked_until":   "VARCHAR DEFAULT ''",
     "requested_role": "VARCHAR DEFAULT ''",
+    "email_verified_at": "VARCHAR DEFAULT ''",
+    "verify_code_hash":  "VARCHAR DEFAULT ''",
+    "verify_expires_at": "VARCHAR DEFAULT ''",
+    "verify_attempts":   "INTEGER DEFAULT 0",
+    "last_login":        "VARCHAR DEFAULT ''",
 }
 
 _ATTACHMENT_COLUMNS = {

@@ -8,6 +8,7 @@ import EmptyState from '../components/EmptyState.jsx'
 import { SkeletonTicketList } from '../components/Skeleton.jsx'
 import { CATEGORIES } from '../config/surveys.js'
 import { formatDate, formatDateTime, smartTime, fullTimestamp } from '../utils/dates.js'
+import { ticketRef } from '../utils/tickets.js'
 
 /** Mirrors TRASH_RETENTION_DAYS in the backend. Display only. */
 const RETENTION_DAYS = 30
@@ -15,8 +16,6 @@ const RETENTION_DAYS = 30
 const CATEGORY_LABEL = Object.fromEntries(
   CATEGORIES.map((c) => [c.id, c.label])
 )
-
-function fmtId(id) { return `TKT-${String(id).padStart(3, '0')}` }
 
 function categoryLabel(id) {
   return CATEGORY_LABEL[id] || id || 'Uncategorised'
@@ -119,7 +118,7 @@ export default function Archive() {
     try {
       await api.restoreTicket(ticket.id)
       setTrash((list) => list.filter((t) => t.id !== ticket.id))
-      toast.success(`${fmtId(ticket.id)} restored`)
+      toast.success(`${ticketRef(ticket)} restored`)
       loadArchive()
     } catch (err) {
       toast.error(err.message)
@@ -142,7 +141,7 @@ export default function Archive() {
     try {
       await api.deleteTicketPermanently(ticket.id)
       setTrash((list) => list.filter((t) => t.id !== ticket.id))
-      toast.success(`${fmtId(ticket.id)} deleted permanently`)
+      toast.success(`${ticketRef(ticket)} deleted permanently`)
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -341,7 +340,7 @@ export default function Archive() {
                       <span className="archive-item-main">
                         <span className="archive-item-title">{t.title}</span>
                         <span className="archive-item-meta">
-                          <span className="ticket-id">{fmtId(t.id)}</span>
+                          <span className="ticket-id">{ticketRef(t)}</span>
                           <span className="badge badge-category">{categoryLabel(t.category)}</span>
                           <span title={fullTimestamp(t.closed_at || t.updated_at)}>
                             closed {formatDate(t.closed_at || t.updated_at)}
@@ -424,7 +423,7 @@ export default function Archive() {
                     <div className="trash-item-main">
                       <div className="trash-item-title">{t.title}</div>
                       <div className="archive-item-meta">
-                        <span className="ticket-id">{fmtId(t.id)}</span>
+                        <span className="ticket-id">{ticketRef(t)}</span>
                         <span className="badge badge-category">{categoryLabel(t.category)}</span>
                         <span title={fullTimestamp(t.deleted_at)}>
                           deleted {smartTime(t.deleted_at)}

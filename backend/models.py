@@ -74,6 +74,16 @@ class UserDB(Base):
     failed_logins: Mapped[int] = mapped_column(Integer, default=0)
     locked_until:  Mapped[str] = mapped_column(String, default="")
 
+    # ── Email verification ──
+    # Timestamp of the last successful verification; empty means never.
+    email_verified_at: Mapped[str] = mapped_column(String, default="")
+    # SHA-256 of the current 6-digit code, never the code itself.
+    verify_code_hash:  Mapped[str] = mapped_column(String, default="")
+    verify_expires_at: Mapped[str] = mapped_column(String, default="")
+    verify_attempts:   Mapped[int] = mapped_column(Integer, default=0)
+    # Drives the "hasn't signed in for 30+ days" re-check.
+    last_login:        Mapped[str] = mapped_column(String, default="")
+
 
 class TicketDB(Base):
     __tablename__ = "tickets"
@@ -92,6 +102,11 @@ class TicketDB(Base):
 
     # ── Archive / trash ──
     #
+    # Human-facing reference, e.g. "TK-AC43". Separate from the primary key
+    # because people read these aloud and quote them in email, and a
+    # sequential id leaks how many tickets exist.
+    ref: Mapped[str] = mapped_column(String, default="", index=True)
+
     # closed_at is deliberately NOT updated_at: editing a closed ticket moves
     # updated_at, but the archive needs to know when the work was actually
     # finished, because that is what the date filter ranges over.
@@ -305,6 +320,23 @@ class UserEmailUpdate(BaseModel):
     _v_email = field_validator("email")(validate_email)
 
 
+class VerifyRequest(BaseModel):
+    username: str
+    code: str
+
+    @field_validator("code")
+    @classmethod
+    def _six_digits(cls, v: str) -> str:
+        v = (v or "").strip().replace(" ", "")
+        if not (len(v) == 6 and v.isdigit()):
+            raise ValueError("Enter the 6-digit code from your email")
+        return v
+
+
+class ResendCodeRequest(BaseModel):
+    username: str
+
+
 VALID_ANNOUNCEMENT_LEVELS = ("info", "warning", "critical")
 
 
@@ -458,6 +490,7 @@ class TicketOut(BaseModel):
     # Archive and trash bookkeeping. Empty string means "not closed" and
     # "not deleted" respectively, which keeps every filter a plain string
     # comparison instead of a NULL check.
+    ref: str = ""
     closed_at: str = ""
     deleted_at: str = ""
     deleted_by: str = ""
@@ -471,7 +504,7 @@ class TicketOut(BaseModel):
             return [] if info.field_name == "history" else {}
         return v
 
-    @field_validator("category", "closed_at", "deleted_at", "deleted_by",
+    @field_validator("category", "ref", "closed_at", "deleted_at", "deleted_by",
                      mode="before")
     @classmethod
     def _no_null_strings(cls, v):

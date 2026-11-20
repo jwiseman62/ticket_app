@@ -6,6 +6,7 @@ import EmptyState from '../components/EmptyState.jsx'
 import { SkeletonStatCards } from '../components/Skeleton.jsx'
 import AnnouncementBanner from '../components/AnnouncementBanner.jsx'
 import { smartTime, fullTimestamp } from '../utils/dates.js'
+import { ticketRef } from '../utils/tickets.js'
 
 // ── Sub-components ────────────────────────────────────────────────── //
 
@@ -54,8 +55,6 @@ function BarChart({ data, colorMap }) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────── //
-
-function fmtId(id) { return `TKT-${String(id).padStart(3, '0')}` }
 
 const STATUS_COLORS   = { Open: '#2563eb', 'In Progress': '#d97706', Closed: '#64748b' }
 const PRIORITY_COLORS = { High: '#dc2626', Medium: '#d97706', Low: '#16a34a' }
@@ -183,7 +182,7 @@ export default function Home() {
                 {stats.recent.map((t) => (
                   <tr key={t.id}>
                     <td>
-                      <Link to={`/tickets/${t.id}`} className="ticket-link">{fmtId(t.id)}</Link>
+                      <Link to={`/tickets/${t.id}`} className="ticket-link">{ticketRef(t)}</Link>
                     </td>
                     <td className="recent-title">{t.title}</td>
                     <td>
@@ -210,7 +209,7 @@ export default function Home() {
               {stats.recent.map((t) => (
                 <Link to={`/tickets/${t.id}`} key={t.id} className="recent-mobile-card">
                   <div className="recent-mobile-top">
-                    <span className="ticket-id">{fmtId(t.id)}</span>
+                    <span className="ticket-id">{ticketRef(t)}</span>
                     <span className={`badge badge-prio-${t.priority.toLowerCase()}`}>{t.priority}</span>
                     <span className={`badge badge-status-${t.status.replace(' ', '-').toLowerCase()}`}>{t.status}</span>
                   </div>

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import * as api from '../api.js'
 import ArticleSuggestions from '../components/ArticleSuggestions.jsx'
+import { ticketRef } from '../utils/tickets.js'
 import {
   CATEGORIES, questionsFor, suggestPriority, categoryIcon, categoryLabel,
 } from '../config/surveys.js'
@@ -35,8 +36,17 @@ export default function NewTicket() {
   const [touchedPriority, setTouchedPriority] = useState(false)
   const [saving,   setSaving]   = useState(false)
   const [created,  setCreated]  = useState(null)
+  const [reviewing, setReviewing] = useState(false)
 
   const questions = useMemo(() => questionsFor(category), [category])
+
+  // Escape closes the review, matching the other dialogs in the app.
+  useEffect(() => {
+    if (!reviewing) return
+    const onKey = (e) => { if (e.key === 'Escape') setReviewing(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [reviewing])
   const suggestion = useMemo(
     () => (category ? suggestPriority(category, answers) : null),
     [category, answers],
@@ -58,8 +68,14 @@ export default function NewTicket() {
 
   const matchText = [title, description, ...Object.values(answers).map(String)].join(' ')
 
+  function openReview() {
+    if (!title.trim()) { toast.error('Please give your issue a short title.'); return }
+    setReviewing(true)
+  }
+
   async function submit() {
     if (!title.trim()) { toast.error('Please give your issue a short title.'); return }
+    setReviewing(false)
     setSaving(true)
     try {
       const ticket = await api.createTicket({
@@ -282,9 +298,104 @@ export default function NewTicket() {
               ← Back
             </button>
             <button type="button" className="btn btn-primary"
-                    onClick={submit} disabled={saving || !title.trim()}>
-              {saving ? 'Submitting…' : 'Submit Ticket'}
+                    onClick={openReview} disabled={saving || !title.trim()}>
+              Review &amp; Submit
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Review before submitting ──
+          A ticket is read by someone else, so a typo or a missing detail
+          costs a round trip. This shows exactly what will be filed, with a
+          way back to each step rather than only an OK button. */}
+      {reviewing && (
+        <div className="review-backdrop" role="presentation"
+             onClick={() => setReviewing(false)}>
+          <div
+            className="review-dialog"
+            role="dialog" aria-modal="true" aria-labelledby="review-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="review-title" id="review-title">
+              Is everything correct?
+            </h2>
+            <p className="review-sub">
+              This is what the helpdesk will see. You can still go back and
+              change anything.
+            </p>
+
+            <dl className="review-list">
+              <div className="review-row">
+                <dt>Category</dt>
+                <dd>
+                  {category
+                    ? `${categoryIcon(category)} ${categoryLabel(category)}`
+                    : <span className="review-empty">Not chosen</span>}
+                </dd>
+              </div>
+              <div className="review-row">
+                <dt>Title</dt>
+                <dd>{title.trim()}</dd>
+              </div>
+              <div className="review-row">
+                <dt>Description</dt>
+                <dd>
+                  {description.trim()
+                    ? <span className="review-pre">{description.trim()}</span>
+                    : <span className="review-empty">Left blank</span>}
+                </dd>
+              </div>
+              <div className="review-row">
+                <dt>Priority</dt>
+                <dd>
+                  {priority}
+                  {suggestion && !touchedPriority && (
+                    <span className="review-note"> · suggested</span>
+                  )}
+                </dd>
+              </div>
+              {dueDate && (
+                <div className="review-row">
+                  <dt>Needed by</dt><dd>{dueDate}</dd>
+                </div>
+              )}
+            </dl>
+
+            {questions.length > 0 && (
+              <>
+                <h3 className="review-section">
+                  Your answers ({answeredCount} of {questions.length})
+                </h3>
+                <dl className="review-list">
+                  {questions.map((q) => {
+                    const v = answers[q.id]
+                    const filled = v !== undefined && String(v).trim() !== ''
+                    return (
+                      <div className="review-row" key={q.id}>
+                        <dt>{q.label}</dt>
+                        <dd>
+                          {filled
+                            ? String(v)
+                            : <span className="review-empty">Skipped</span>}
+                        </dd>
+                      </div>
+                    )
+                  })}
+                </dl>
+              </>
+            )}
+
+            <div className="review-actions">
+              <button type="button" className="btn btn-primary"
+                      onClick={submit} disabled={saving}>
+                {saving ? 'Submitting…' : 'Yes, submit it'}
+              </button>
+              <button type="button" className="btn btn-secondary"
+                      onClick={() => setReviewing(false)}>
+                Go back and edit
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -295,7 +406,7 @@ export default function NewTicket() {
           <div className="wizard-done-icon">✅</div>
           <h1 className="wizard-title">Your ticket is in</h1>
           <p className="wizard-sub">
-            Reference <strong>TKT-{String(created.id).padStart(3, '0')}</strong>
+            Reference <strong>{ticketRef(created)}</strong>
             {' — '}keep this handy if you need to follow up.
           </p>
 

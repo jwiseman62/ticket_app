@@ -3,8 +3,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import TicketForm from '../components/TicketForm.jsx'
 import EmptyState from '../components/EmptyState.jsx'
-
-function fmtId(id) { return `TKT-${String(id).padStart(3, '0')}` }
+import { ticketRef } from '../utils/tickets.js'
 
 /**
  * One ticket, on its own page.
@@ -39,7 +38,7 @@ export default function TicketDetail() {
   return (
     <div className="detail-page">
       <div className="detail-header">
-        {/* The ticket card below leads with its own TKT-### heading, so
+        {/* The ticket card below leads with its own reference heading, so
             repeating it here would just be noise. */}
         <Link to="/tickets" className="btn btn-secondary btn-sm">← All tickets</Link>
       </div>
@@ -49,8 +48,8 @@ export default function TicketDetail() {
         ticketId={ticketId}
         currentUser={user}
         onSaved={() => { /* TicketForm reports success itself */ }}
-        onDeleted={() => {
-          toast.success(`${fmtId(ticketId)} moved to the trash.`)
+        onDeleted={(deleted) => {
+          toast.success(`${ticketRef(deleted || ticketId)} moved to the trash.`)
           navigate('/tickets', { replace: true })
         }}
       />

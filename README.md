@@ -84,10 +84,38 @@ The whole survey is skippable.
 - CSV export of the current filtered view
 - Deleting is a soft delete — tickets go to the trash, not away
 
+### Ticket references
+
+Tickets are identified by a short code like **TK-AC43** rather than a
+sequential number. People read these aloud and type them from memory, so the
+alphabet leaves out the characters that get confused — 0/O and 1/I/L — giving
+31 symbols and 31⁴ = 923,521 combinations.
+
+Codes are random rather than sequential, which means collisions are possible:
+by the birthday bound a few thousand tickets give a real chance of one. The
+generator checks and retries, so it never hands out a duplicate. A sequential
+id also leaks how many tickets exist, which a random code doesn't.
+
+### Email verification
+
+Requesters confirm their address with a 6-digit code at signup, and again
+after `VERIFICATION_IDLE_DAYS` (30) of not signing in. Technicians and admins
+are exempt by design: locking a technician out of an incident because a code
+didn't arrive is worse than the risk it guards against.
+
+Off by default, and it refuses to switch on without a working mail provider —
+enforcing it with nowhere to send the code would lock every new user out
+permanently. Demo accounts are exempt whenever `DEMO_MODE` is on, so the live
+demo's one-click logins keep working.
+
+Codes are stored as SHA-256 hashes, expire after 15 minutes, and lock out
+after 5 wrong attempts. Wrong code, expired code and unknown username all
+return the same message, so the endpoint can't be used to discover accounts.
+
 ### Announcements
 
 Technicians and admins can post a notice that everyone with an account sees at
-the top of their dashboard — scheduled maintenance, an outage, a change of
+the top of their dashboard, and that is emailed to every user with an address — scheduled maintenance, an outage, a change of
 process. Three levels (information, heads-up, urgent) set the colour, and
 nothing else.
 
@@ -360,6 +388,10 @@ value is optional for local development.
 | `CORS_ORIGINS` | Comma-separated origins allowed to call the API. Must match the browser's origin exactly — `localhost` and `127.0.0.1` differ. |
 | `STORE_UPLOADS_IN_DB` | `true` stores attachment bytes in the database instead of on disk. Needed on hosts with ephemeral filesystems. |
 | `MAX_UPLOAD_MB` | Upload size cap. Defaults to 10. |
+| `RESEND_API_KEY` | Enables email. Unset means every send is a silent no-op. |
+| `MAIL_FROM` | Sender address. Needs a verified domain to reach anyone but yourself. |
+| `REQUIRE_EMAIL_VERIFICATION` | Gate requesters behind a 6-digit code. Defaults to false. |
+| `VERIFICATION_IDLE_DAYS` | Days idle before a verified requester re-verifies. Defaults to 30. |
 | `CLOSED_GRACE_DAYS` | How long a closed ticket stays on the board and in the dashboard counters before moving to the archive. Defaults to 1 (24 hours). |
 | `TRASH_RETENTION_DAYS` | How long a deleted ticket is recoverable. Defaults to 30. |
 | `DEMO_MODE` | Enables the demo reset endpoint. |
@@ -448,6 +480,8 @@ All endpoints except `/auth/register` and `/auth/login` require a bearer token.
 | `POST` | `/tickets/{id}/claim` | Assign to self, auto-advances to In Progress |
 | `DELETE` | `/tickets/{id}` | Technician or admin. Soft delete — moves to the trash |
 | `GET` | `/tickets/export/csv` | Honors the same filters |
+| `POST` | `/auth/verify` | Exchange a 6-digit code for a token |
+| `POST` | `/auth/resend-code` | Send another code. Always reports success |
 | `GET` | `/announcements/current` | The pinned notice, or null. Any signed-in user |
 | `GET` | `/announcements` | Pinned plus history, newest first |
 | `POST` | `/announcements` | Technician or admin. Retires the previous notice |

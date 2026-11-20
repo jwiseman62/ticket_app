@@ -46,7 +46,7 @@ Leave `?sslmode=require` on the end; Neon needs it and the app preserves it.
 
 1. Push this repo to GitHub if you haven't.
 2. At [render.com](https://render.com): **New → Blueprint**, select the repo.
-   It picks up `render.yaml` and creates a service called `ticket-api`.
+   It picks up `render.yaml` and creates a service called `tech-help-api`.
 3. Render will ask for the two values marked `sync: false`:
 
    | Variable | Value |
@@ -71,8 +71,8 @@ Leave `?sslmode=require` on the end; Neon needs it and the app preserves it.
    The demo data seeds automatically on first boot. On later boots it detects
    existing accounts and skips, so restarts don't duplicate anything.
 
-5. Note your API URL — something like `https://ticket-api.onrender.com`.
-   Check `https://ticket-api.onrender.com/health` returns `{"status":"ok"}`.
+5. Note your API URL — something like `https://tech-help-api.onrender.com`.
+   Check `https://tech-help-api.onrender.com/health` returns `{"status":"ok"}`.
 
 6. Copy the generated **`DEMO_RESET_TOKEN`** from the service's Environment
    tab. Step 4 needs it.
@@ -94,6 +94,41 @@ recoverable.
 
 ---
 
+## 2b — Email (optional)
+
+Skip this and the app works exactly as it does now — every send is a silent
+no-op. Set it up when you want announcement emails or verification codes
+actually delivered.
+
+**Render's free tier blocks outbound SMTP** (ports 25, 465 and 587, since
+September 2025), so Gmail and friends can never connect. Mail goes over
+Resend's HTTPS API instead.
+
+1. Sign up at [resend.com](https://resend.com) and create an API key.
+2. On Render, add `RESEND_API_KEY` to `tech-help-api`.
+
+That's enough to send — **to your own Resend account address only.** The
+default sender, `onboarding@resend.dev`, is a test address; anything sent to
+anyone else comes back 403 with *"You can only send testing emails to your own
+email address."*
+
+To reach real users you need a domain:
+
+3. At [resend.com/domains](https://resend.com/domains), add a domain you own
+   and create the DNS records it gives you at your registrar.
+4. Set `MAIL_FROM` on Render to an address at that domain, e.g.
+   `Tech Help <help@yourdomain.com>`.
+
+Free tier is 100 emails/day and 3,000/month, counted per recipient.
+
+**Only once mail actually reaches other people** should you consider turning
+on `REQUIRE_EMAIL_VERIFICATION`. Until then leave it off: with no verified
+domain, a visitor who registers would never receive their code. The backend
+refuses to enforce the gate when no provider is configured, but it can't tell
+whether your domain is verified — that part is on you.
+
+---
+
 ## 3 — Frontend (Vercel)
 
 1. At [vercel.com](https://vercel.com): **Add New → Project**, select the repo.
@@ -103,7 +138,7 @@ recoverable.
 
    | Variable | Value |
    |---|---|
-   | `VITE_API_URL` | your Render URL, e.g. `https://ticket-api.onrender.com` |
+   | `VITE_API_URL` | your Render URL, e.g. `https://tech-help-api.onrender.com` |
    | `VITE_DEMO_MODE` | `true` |
 
 4. Deploy, and note the URL — something like
@@ -153,6 +188,8 @@ Visit your Vercel URL and confirm:
 - [ ] Archive → **Trash** shows 3 tickets, one flagged as expiring soon
 - [ ] Dashboard **Closed** tile reads "last 24 hours"; **Archived** links to the archive
 - [ ] Admin → **New account** creates a technician who can then sign in
+- [ ] Ticket IDs read like **TK-AC43**, not TKT-001
+- [ ] Filing a ticket shows an "Is everything correct?" review before submitting
 - [ ] Dark mode toggle works
 - [ ] Sign in as *Admin* → Admin page shows 1 pending technician request
 - [ ] Refresh the page while on `/tickets` — it should load, not 404

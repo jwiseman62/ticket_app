@@ -9,6 +9,7 @@ import SurveyAnswers     from './SurveyAnswers.jsx'
 import Comments          from './Comments.jsx'
 import Attachments       from './Attachments.jsx'
 import { categoryLabel, categoryIcon } from '../config/surveys.js'
+import { ticketRef } from '../utils/tickets.js'
 
 const STATUS_OPTIONS   = ['Open', 'In Progress', 'Closed']
 const PRIORITY_OPTIONS = ['Low', 'Medium', 'High']
@@ -16,8 +17,6 @@ const EMPTY = {
   title: '', requester: '', technician: '', priority: 'Medium',
   status: 'Open', due_date: '', description: '',
 }
-
-function fmtId(id) { return `TKT-${String(id).padStart(3, '0')}` }
 
 export default function TicketForm({ ticketId, currentUser, onSaved, onDeleted }) {
   const toast = useToast()
@@ -89,7 +88,7 @@ export default function TicketForm({ ticketId, currentUser, onSaved, onDeleted }
         ? await api.updateTicket(ticketId, payload)
         : await api.createTicket(payload)
       setTicket(saved)
-      toast.success(ticketId ? `Saved ${fmtId(saved.id)}` : `Created ${fmtId(saved.id)}`)
+      toast.success(ticketId ? `Saved ${ticketRef(saved)}` : `Created ${ticketRef(saved)}`)
       onSaved(saved.id)
     } catch (err) {
       setError(err.message)
@@ -101,7 +100,7 @@ export default function TicketForm({ ticketId, currentUser, onSaved, onDeleted }
   async function handleDelete() {
     if (!ticketId) return
     const ok = await confirm({
-      title: `Delete ${fmtId(ticketId)}?`,
+      title: `Delete ${ticketRef(ticket || ticketId)}?`,
       message: 'The ticket and all its comments and attachments will be removed.',
       detail: 'This cannot be undone.',
       confirmLabel: 'Delete ticket',
@@ -110,7 +109,9 @@ export default function TicketForm({ ticketId, currentUser, onSaved, onDeleted }
     if (!ok) return
     try {
       await api.deleteTicket(ticketId)
-      onDeleted()
+      // Pass the ticket up: the page showing a toast needs its reference,
+      // and after this it has no way to fetch it.
+      onDeleted(ticket)
     } catch (err) { setError(err.message) }
   }
 
@@ -137,7 +138,7 @@ export default function TicketForm({ ticketId, currentUser, onSaved, onDeleted }
 
       {/* Header */}
       <div className="ticket-form-header">
-        <h2>{ticketId ? fmtId(ticketId) : 'New Ticket'}</h2>
+        <h2>{ticketId ? ticketRef(ticket || ticketId) : 'New Ticket'}</h2>
         {category && (
           <span className="survey-cat-chip">
             {categoryIcon(category)} {categoryLabel(category)}

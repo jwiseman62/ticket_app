@@ -408,6 +408,19 @@ ANNOUNCEMENTS = [
 ]
 
 
+# Mirrors generate_ticket_ref in main.py. Duplicated rather than imported
+# because importing main.py would start the whole app just to seed a table.
+_REF_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+
+
+def _make_ref(used: set) -> str:
+    while True:
+        ref = "TK-" + "".join(random.choice(_REF_ALPHABET) for _ in range(4))
+        if ref not in used:
+            used.add(ref)
+            return ref
+
+
 def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
 
@@ -427,6 +440,7 @@ def wipe(db) -> None:
 def seed(db) -> dict:
     """Create users, tickets, comments and knowledge base articles."""
     now = _now()
+    used_refs: set = set()
     counts = {"users": 0, "tickets": 0, "comments": 0, "articles": 0,
               "deleted": 0, "announcements": 0}
 
@@ -507,7 +521,7 @@ def seed(db) -> dict:
             priority=priority, created_at=created_iso, updated_at=_iso(updated),
             requester=requester, technician=technician, due_date=due_date,
             category=category, survey=survey, history=history,
-            closed_at=closed_at,
+            closed_at=closed_at, ref=_make_ref(used_refs),
         )
         db.add(ticket)
         db.flush()                      # assign the id without committing
@@ -570,7 +584,7 @@ def seed(db) -> dict:
             title=title, description=description, status="Open",
             priority=priority, created_at=_iso(created), updated_at=_iso(deleted),
             requester=requester, technician=technician, due_date="",
-            category=category, survey=None,
+            category=category, survey=None, ref=_make_ref(used_refs),
             deleted_at=_iso(deleted), deleted_by=deleted_by,
             history=[
                 f"[{_iso(created)}] Created by {requester} (role: Requester)",

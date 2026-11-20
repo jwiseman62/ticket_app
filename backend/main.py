@@ -1,5 +1,6 @@
 import csv
 import io
+import hashlib
 import os
 import re
 import secrets
@@ -24,8 +25,9 @@ from auth import (
     register_failed_login, require_admin, require_staff, utc_now, utc_now_iso,
     verify_password,
 )
-from database import Base, describe_backend, engine, get_db, migrate
-from email_utils import send_notification
+from database import (Base, SessionLocal, describe_backend, engine, get_db,
+                      migrate)
+from email_utils import email_configured, send_bulk, send_notification
 from models import (
     ArticleCreate, ArticleDB, ArticleOut,
     AttachmentDB, AttachmentOut,
@@ -34,6 +36,7 @@ from models import (
     TicketCreate, TicketDB, TicketOut, TicketStatusUpdate, TicketUpdate,
     InviteCodeDB, InviteCreate, InviteOut, InviteRedeem,
     AdminUserCreate, AnnouncementDB, AnnouncementIn, AnnouncementOut,
+    ResendCodeRequest, VerifyRequest,
     UserCreate, UserDB, UserEmailUpdate, UserOut, UserPasswordReset, UserRoleUpdate,
 )
 from seed_articles import SEED_ARTICLES
@@ -76,6 +79,16 @@ CLOSED_GRACE_DAYS = int(os.environ.get("CLOSED_GRACE_DAYS", "1"))
 
 # Deleted tickets are recoverable for this long, then purged for real.
 TRASH_RETENTION_DAYS = int(os.environ.get("TRASH_RETENTION_DAYS", "30"))
+
+# ── Email verification ──
+# Off by default. The public demo runs with it off so the "Try it instantly"
+# buttons keep working; turn it on where real email delivery is configured.
+REQUIRE_EMAIL_VERIFICATION = (
+    os.environ.get("REQUIRE_EMAIL_VERIFICATION", "false").lower() == "true"
+)
+VERIFICATION_IDLE_DAYS = int(os.environ.get("VERIFICATION_IDLE_DAYS", "30"))
+VERIFY_CODE_TTL_MINUTES = int(os.environ.get("VERIFY_CODE_TTL_MINUTES", "15"))
+VERIFY_MAX_ATTEMPTS = int(os.environ.get("VERIFY_MAX_ATTEMPTS", "5"))
 
 # ── Startup ─────────────────────────────────────────────────────── #
 
@@ -139,7 +152,17 @@ def health():
 
 # ── Helpers ─────────────────────────────────────────────────────── #
 
-def fmt_id(ticket_id: int) -> str:
+def fmt_id(ticket) -> str:
+    """The reference people quote: "TK-AC43".
+
+    Accepts a ticket or a bare id. Tickets created before refs existed, and
+    the handful of call sites that only have an id to hand, fall back to the
+    old TKT-### form rather than showing nothing.
+    """
+    ref = getattr(ticket, "ref", "")
+    if ref:
+        return str(ref)
+    ticket_id = ticket if isinstance(ticket, int) else getattr(ticket, "id", 0)
     return f"TKT-{ticket_id:03d}"
 
 
@@ -173,6 +196,58 @@ def _apply_filters(tickets, search, status_filter, priority_filter, view,
                 continue
         result.append(t)
     return result
+
+
+# ── Ticket references ───────────────────────────────────────────── #
+#
+# "TK-AC43" rather than "TKT-001". People read these aloud and type them from
+# memory, so the alphabet leaves out the characters that get confused: 0/O,
+# 1/I/L. That leaves 31 symbols and 31^4 = 923,521 combinations.
+
+REF_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+REF_LENGTH = 4
+REF_PREFIX = "TK-"
+
+
+def _random_ref() -> str:
+    return REF_PREFIX + "".join(
+        secrets.choice(REF_ALPHABET) for _ in range(REF_LENGTH)
+    )
+
+
+def generate_ticket_ref(db: Session, attempts: int = 12) -> str:
+    """A reference not already in use.
+
+    Random rather than sequential, so collisions are possible: by the
+    birthday bound a few thousand tickets give a real chance of one. Checking
+    and retrying costs an indexed lookup and removes the problem entirely.
+    """
+    for _ in range(attempts):
+        candidate = _random_ref()
+        exists = (db.query(TicketDB.id)
+                    .filter(TicketDB.ref == candidate).first())
+        if not exists:
+            return candidate
+
+    # Astronomically unlikely unless the space is nearly full. Falling back to
+    # the row id keeps ticket creation working rather than failing outright.
+    fallback = db.query(TicketDB).count() + 1
+    return f"{REF_PREFIX}{fallback:04d}"
+
+
+def backfill_ticket_refs(db: Session) -> int:
+    """Give a reference to any ticket created before refs existed."""
+    missing = db.query(TicketDB).filter(
+        (TicketDB.ref == "") | (TicketDB.ref.is_(None))
+    ).all()
+    for ticket in missing:
+        ticket.ref = generate_ticket_ref(db)
+        # Flush so the next generate_ticket_ref sees this one and can't
+        # hand out the same code twice inside a single backfill.
+        db.flush()
+    if missing:
+        db.commit()
+    return len(missing)
 
 
 def _live(db: Session):
@@ -271,6 +346,89 @@ def _emails_for(db: Session, *names: str) -> list:
     return [u.email for u in rows if u.email]
 
 
+# ── Email verification ──────────────────────────────────────────── #
+#
+# Requesters confirm their address at signup, and again after a long gap.
+# Technicians and admins are exempt: they're staff the admin created or
+# approved, and locking a technician out of an incident because a code
+# didn't arrive is worse than the risk it guards against.
+
+
+def _hash_code(code: str) -> str:
+    """Codes are stored hashed so a database dump doesn't hand out live ones."""
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def verification_available() -> bool:
+    """Whether the gate can be enforced at all.
+
+    Requires both the flag and a working mail provider. Enforcing it without
+    somewhere to send the code would lock every new user out permanently,
+    so the absence of email silently disables the gate rather than bricking
+    signup.
+    """
+    return REQUIRE_EMAIL_VERIFICATION and email_configured()
+
+
+def user_needs_verification(user: UserDB) -> bool:
+    """Whether this user must enter a code before being let in."""
+    if not verification_available():
+        return False
+    # Staff are exempt by design.
+    if user.role != "Requester":
+        return False
+    # Demo accounts keep the public demo one click away.
+    if DEMO_MODE and str(user.name or "").startswith("demo."):
+        return False
+    if not str(user.email or "").strip():
+        # Nowhere to send a code; don't strand them.
+        return False
+
+    if not str(user.email_verified_at or ""):
+        return True
+
+    # Verified once, but away long enough that we re-check.
+    last = str(user.last_login or "")
+    if not last:
+        return True
+    return last < _days_ago_iso(VERIFICATION_IDLE_DAYS)
+
+
+def issue_verification_code(db: Session, user: UserDB) -> str:
+    """Generate, store and email a fresh code. Returns it (for tests/logs)."""
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    user.verify_code_hash = _hash_code(code)
+    user.verify_expires_at = (
+        utc_now() + timedelta(minutes=VERIFY_CODE_TTL_MINUTES)
+    ).isoformat(timespec="seconds")
+    user.verify_attempts = 0
+    db.commit()
+
+    send_notification(
+        subject=f"Your Tech Help verification code: {code}",
+        body=(
+            f"Hi {user.name},\n\n"
+            f"Your verification code is {code}\n\n"
+            f"It expires in {VERIFY_CODE_TTL_MINUTES} minutes. If you didn't "
+            f"try to sign in, you can ignore this message.\n"
+        ),
+        to=[user.email],
+    )
+    return code
+
+
+def _mark_signed_in(db: Session, user: UserDB) -> dict:
+    """Record the login and mint a token."""
+    user.last_login = utc_now_iso()
+    db.commit()
+    token = create_access_token(
+        {"sub": user.name, "role": user.role},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    return {"access_token": token, "token_type": "bearer",
+            "role": user.role, "name": user.name}
+
+
 # ═══════════════════════════ AUTH ═══════════════════════════ #
 
 @app.post("/auth/register", response_model=UserOut, status_code=201)
@@ -305,6 +463,10 @@ def register(body: UserCreate, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    if user_needs_verification(user):
+        issue_verification_code(db, user)
+
     return user
 
 
@@ -349,11 +511,89 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
         user.password_hash = hash_password(form.password)
         db.commit()
 
-    token = create_access_token(
-        {"sub": user.name, "role": user.role},
-        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    # Password was right. If this account still owes us a code, don't issue a
+    # token — hand back a challenge and email a fresh code instead.
+    if user_needs_verification(user):
+        issue_verification_code(db, user)
+        masked = _mask_email(user.email)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "verification_required",
+                "username": user.name,
+                "email_hint": masked,
+                "message": f"We sent a 6-digit code to {masked}.",
+            },
+        )
+
+    return _mark_signed_in(db, user)
+
+
+def _mask_email(addr: str) -> str:
+    """j•••@example.com — enough to recognise, not enough to harvest."""
+    addr = (addr or "").strip()
+    if "@" not in addr:
+        return "your email"
+    local, _, domain = addr.partition("@")
+    head = local[0] if local else ""
+    return f"{head}{'•' * max(2, len(local) - 1)}@{domain}"
+
+
+@app.post("/auth/verify")
+def verify_email(body: VerifyRequest, db: Session = Depends(get_db)):
+    """Exchange a 6-digit code for a token.
+
+    Deliberately vague on failure: the same message covers a wrong code, an
+    expired one and an unknown username, so this can't be used to discover
+    which accounts exist or whether a code is still live.
+    """
+    invalid = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="That code isn't right, or it has expired. Request a new one.",
     )
-    return {"access_token": token, "token_type": "bearer", "role": user.role, "name": user.name}
+
+    user = db.query(UserDB).filter(UserDB.name == body.username).first()
+    if not user or not str(user.verify_code_hash or ""):
+        raise invalid
+
+    if int(user.verify_attempts or 0) >= VERIFY_MAX_ATTEMPTS:
+        # Burn the code rather than leaving it guessable.
+        user.verify_code_hash = ""
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many incorrect codes. Request a new one.",
+        )
+
+    expires = str(user.verify_expires_at or "")
+    if not expires or expires < utc_now_iso():
+        raise invalid
+
+    if not secrets.compare_digest(_hash_code(body.code), str(user.verify_code_hash)):
+        user.verify_attempts = int(user.verify_attempts or 0) + 1
+        db.commit()
+        raise invalid
+
+    # Correct. Clear the challenge and let them in.
+    user.email_verified_at = utc_now_iso()
+    user.verify_code_hash = ""
+    user.verify_expires_at = ""
+    user.verify_attempts = 0
+    db.commit()
+    return _mark_signed_in(db, user)
+
+
+@app.post("/auth/resend-code")
+def resend_verification_code(body: ResendCodeRequest, db: Session = Depends(get_db)):
+    """Send another code.
+
+    Always reports success, whether or not the username exists, so this
+    can't be used to enumerate accounts.
+    """
+    user = db.query(UserDB).filter(UserDB.name == body.username).first()
+    if user and user_needs_verification(user):
+        issue_verification_code(db, user)
+    return {"ok": True, "message": "If that account needs a code, one is on its way."}
 
 
 @app.get("/auth/me", response_model=UserOut)
@@ -902,7 +1142,7 @@ def export_csv(search: str = Query(""), status_filter: str = Query("All"),
                 "survey", "history"])
     for t in tickets:
         survey_txt = "; ".join(f"{k}: {v}" for k, v in (t.survey or {}).items() if v)
-        w.writerow([fmt_id(t.id), t.title, t.description, t.status, t.priority,
+        w.writerow([fmt_id(t), t.title, t.description, t.status, t.priority,
                     t.category or "", t.created_at, t.updated_at, t.requester,
                     t.technician, t.due_date, survey_txt, " | ".join(t.history or [])])
     output.seek(0)
@@ -969,6 +1209,23 @@ def create_announcement(body: AnnouncementIn, db: Session = Depends(get_db),
     db.add(row)
     db.commit()
     db.refresh(row)
+
+    # Tell everyone with an address. Sent in the background, one message per
+    # person, so a slow mail provider never holds up this response and
+    # nobody sees the rest of the user list.
+    recipients = [u.email for u in db.query(UserDB).all() if str(u.email or "").strip()]
+    heading = body.title or "New announcement"
+    sent = send_bulk(
+        subject=f"[Tech Help] {heading}",
+        body=(
+            f"{heading}\n\n{body.body}\n\n"
+            f"— posted by {current_user.name}\n"
+        ),
+        recipients=recipients,
+    )
+    if sent:
+        print(f"[announcement] emailing {sent} recipient(s)")
+
     return row
 
 
@@ -1167,14 +1424,15 @@ def create_ticket(body: TicketCreate, db: Session = Depends(get_db),
         priority=body.priority, created_at=now, updated_at=now,
         requester=body.requester, technician=body.technician, due_date=body.due_date,
         category=body.category, survey=body.survey or {}, history=history,
+        ref=generate_ticket_ref(db),
     )
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
 
     send_notification(
-        subject=f"New ticket {fmt_id(ticket.id)}: {body.title}",
-        body=(f"New IT ticket created.\n\nID: {fmt_id(ticket.id)}\nTitle: {body.title}\n"
+        subject=f"New ticket {fmt_id(ticket)}: {body.title}",
+        body=(f"New IT ticket created.\n\nID: {fmt_id(ticket)}\nTitle: {body.title}\n"
               f"Category: {body.category or 'Uncategorised'}\n"
               f"Requester: {body.requester}\nPriority: {body.priority}\n"
               f"Status: {body.status}\nTechnician: {body.technician or 'Unassigned'}\n"
@@ -1244,8 +1502,8 @@ def update_ticket(ticket_id: int, body: TicketUpdate, db: Session = Depends(get_
 
     if body.status != old_status:
         send_notification(
-            subject=f"Ticket {fmt_id(ticket_id)} status: {old_status} -> {body.status}",
-            body=(f"Ticket status changed.\n\nID: {fmt_id(ticket_id)}\nTitle: {body.title}\n"
+            subject=f"Ticket {fmt_id(ticket)} status: {old_status} -> {body.status}",
+            body=(f"Ticket status changed.\n\nID: {fmt_id(ticket)}\nTitle: {body.title}\n"
                   f"Status: {old_status} -> {body.status}\nUpdated by: {current_user.name}\n"),
             to=_emails_for(db, ticket.requester, ticket.technician),
         )
@@ -1288,9 +1546,9 @@ def claim_ticket(ticket_id: int, db: Session = Depends(get_db),
     db.refresh(ticket)
 
     send_notification(
-        subject=f"Ticket {fmt_id(ticket_id)} claimed by {current_user.name}",
+        subject=f"Ticket {fmt_id(ticket)} claimed by {current_user.name}",
         body=(f"{current_user.name} has picked up your ticket.\n\n"
-              f"ID: {fmt_id(ticket_id)}\nTitle: {ticket.title}\n"
+              f"ID: {fmt_id(ticket)}\nTitle: {ticket.title}\n"
               f"Status: {ticket.status}\n"),
         to=_emails_for(db, ticket.requester),
     )
@@ -1331,8 +1589,8 @@ def quick_set_status(ticket_id: int, body: TicketStatusUpdate,
     db.refresh(ticket)
 
     send_notification(
-        subject=f"Ticket {fmt_id(ticket_id)} status: {old} -> {body.status}",
-        body=(f"Ticket status changed.\n\nID: {fmt_id(ticket_id)}\n"
+        subject=f"Ticket {fmt_id(ticket)} status: {old} -> {body.status}",
+        body=(f"Ticket status changed.\n\nID: {fmt_id(ticket)}\n"
               f"Title: {ticket.title}\nStatus: {old} -> {body.status}\n"
               f"Updated by: {current_user.name}\n"),
         to=_emails_for(db, ticket.requester, ticket.technician),
@@ -1409,8 +1667,8 @@ def add_comment(ticket_id: int, body: CommentCreate, db: Session = Depends(get_d
         if n and n != current_user.name
     ]
     send_notification(
-        subject=f"New comment on {fmt_id(ticket_id)}: {ticket.title}",
-        body=(f"{current_user.name} commented on ticket {fmt_id(ticket_id)}.\n\n"
+        subject=f"New comment on {fmt_id(ticket)}: {ticket.title}",
+        body=(f"{current_user.name} commented on ticket {fmt_id(ticket)}.\n\n"
               f"{body.body.strip()}"),
         to=_emails_for(db, *others),
     )
@@ -1546,3 +1804,15 @@ def delete_attachment(attachment_id: int, db: Session = Depends(get_db),
     db.delete(att)
     db.commit()
     return {"ok": True}
+
+
+# ── Deferred startup work ───────────────────────────────────────── #
+#
+# This runs here rather than beside migrate() at the top because it depends
+# on helpers defined further down the file. migrate() adds the ref column;
+# this fills it in for tickets that predate it.
+
+with SessionLocal() as _db:
+    _backfilled = backfill_ticket_refs(_db)
+    if _backfilled:
+        print(f"  backfilled {_backfilled} ticket reference(s)")

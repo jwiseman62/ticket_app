@@ -6,6 +6,7 @@ import * as api from '../api.js'
 import EmptyState from '../components/EmptyState.jsx'
 import { SkeletonTicketList } from '../components/Skeleton.jsx'
 import { smartTime, isOverdue, dueLabel, fullTimestamp } from '../utils/dates.js'
+import { ticketRef } from '../utils/tickets.js'
 
 const STATUS_OPTIONS   = ['Open', 'In Progress', 'Closed']
 const PRIORITY_OPTIONS = ['Low', 'Medium', 'High']
@@ -13,8 +14,6 @@ const PRANK = { High: 0, Medium: 1, Low: 2 }
 const SRANK = { Open: 0, 'In Progress': 1, Closed: 2 }
 
 const SEEN_KEY = 'ticketsLastSeen'
-
-function fmtId(id) { return `TKT-${String(id).padStart(3, '0')}` }
 
 function prioClass(t) {
   if (isOverdue(t))          return 'overdue'
@@ -124,7 +123,7 @@ export default function Dashboard() {
     setClaiming(t.id)
     try {
       const updated = await api.claimTicket(t.id)
-      toast.success(`${fmtId(t.id)} is yours — moved to In Progress.`)
+      toast.success(`${ticketRef(t)} is yours — moved to In Progress.`)
       setTickets((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
       fetchTickets()
     } catch (err) {
@@ -139,7 +138,7 @@ export default function Dashboard() {
     try {
       const updated = await api.setTicketStatus(t.id, status)
       setTickets((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
-      toast.success(`${fmtId(t.id)} → ${status}`)
+      toast.success(`${ticketRef(t)} → ${status}`)
     } catch (err) {
       toast.error(err.message)
     }
@@ -312,7 +311,7 @@ export default function Dashboard() {
               >
                 <div className="tl-row-main">
                   <div className="tl-row-top">
-                    <span className="ticket-id">{fmtId(t.id)}</span>
+                    <span className="ticket-id">{ticketRef(t)}</span>
                     {changed && <span className="unread-dot" title="Updated since you last looked" />}
                     <span className={`badge badge-prio-${t.priority.toLowerCase()}`}>{t.priority}</span>
                     <span className={`badge badge-status-${t.status.replace(' ','-').toLowerCase()}`}>
