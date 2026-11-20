@@ -139,6 +139,42 @@ class CommentDB(Base):
     created_at:  Mapped[str] = mapped_column(String, default="")
 
 
+class ConversationDB(Base):
+    """A live chat thread between one requester and the helpdesk.
+
+    Conversations start unclaimed and sit in a queue; the first technician to
+    answer owns it. The technician column doubles as the claim marker, so
+    there is no separate state to keep in sync with it.
+    """
+
+    __tablename__ = "conversations"
+
+    id:         Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    requester:  Mapped[str] = mapped_column(String, index=True)
+    # Empty until a technician picks it up.
+    technician: Mapped[str] = mapped_column(String, default="", index=True)
+    subject:    Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[str] = mapped_column(String, default="")
+    # Bumped on every message, so "most recent activity" sorts without a join.
+    updated_at: Mapped[str] = mapped_column(String, default="", index=True)
+    closed_at:  Mapped[str] = mapped_column(String, default="", index=True)
+
+    # Read markers, one per side. Unread count is "messages from the other
+    # side newer than this", which needs no per-message read rows.
+    requester_read_at:  Mapped[str] = mapped_column(String, default="")
+    technician_read_at: Mapped[str] = mapped_column(String, default="")
+
+
+class MessageDB(Base):
+    __tablename__ = "messages"
+
+    id:              Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    conversation_id: Mapped[int] = mapped_column(Integer, index=True)
+    sender:          Mapped[str] = mapped_column(String)
+    body:            Mapped[str] = mapped_column(Text)
+    created_at:      Mapped[str] = mapped_column(String, default="", index=True)
+
+
 class AnnouncementDB(Base):
     """A notice from the helpdesk to everyone with an account.
 
@@ -318,6 +354,72 @@ class UserEmailUpdate(BaseModel):
     email: str
 
     _v_email = field_validator("email")(validate_email)
+
+
+MAX_MESSAGE_LENGTH = 2000
+
+
+class MessageIn(BaseModel):
+    body: str
+
+    @field_validator("body")
+    @classmethod
+    def _not_empty(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Type a message first")
+        if len(v) > MAX_MESSAGE_LENGTH:
+            raise ValueError(f"Messages are limited to {MAX_MESSAGE_LENGTH} characters")
+        return v
+
+
+class MessageOut(BaseModel):
+    id: int
+    conversation_id: int
+    sender: str
+    body: str
+    created_at: str = ""
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationStart(BaseModel):
+    """Opening a thread. Staff must name the requester; requesters can't."""
+    body: str
+    subject: str = ""
+    requester: str = ""
+
+    @field_validator("body")
+    @classmethod
+    def _not_empty(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Type a message first")
+        if len(v) > MAX_MESSAGE_LENGTH:
+            raise ValueError(f"Messages are limited to {MAX_MESSAGE_LENGTH} characters")
+        return v
+
+
+class ConversationOut(BaseModel):
+    id: int
+    requester: str
+    technician: str = ""
+    subject: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    closed_at: str = ""
+    # Filled in by the endpoint, not stored.
+    unread: int = 0
+    last_message: str = ""
+    last_sender: str = ""
+
+    model_config = {"from_attributes": True}
+
+    @field_validator("technician", "subject", "created_at", "updated_at",
+                     "closed_at", mode="before")
+    @classmethod
+    def _no_nulls(cls, v):
+        return "" if v is None else v
 
 
 class VerifyRequest(BaseModel):

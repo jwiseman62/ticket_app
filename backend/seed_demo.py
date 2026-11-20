@@ -22,7 +22,8 @@ from datetime import datetime, timedelta, timezone
 from auth import hash_password
 from database import Base, SessionLocal, engine, migrate
 from models import (
-    AnnouncementDB, ArticleDB, AttachmentDB, CommentDB, InviteCodeDB,
+    AnnouncementDB, ArticleDB, AttachmentDB, CommentDB, ConversationDB,
+    InviteCodeDB, MessageDB,
     TicketDB, UserDB,
 )
 from seed_articles import SEED_ARTICLES
@@ -421,6 +422,31 @@ def _make_ref(used: set) -> str:
             return ref
 
 
+# Chat threads: one answered, one still waiting in the queue, so a
+# technician opening the demo sees both states.
+# (requester, technician, minutes_ago, [(sender, body), ...])
+CONVERSATIONS = [
+    (
+        "casey.nguyen", "sam.patel", 42,
+        [
+            ("casey.nguyen", "Morning — the shared drive is asking me for a "
+                             "password that it never used to."),
+            ("sam.patel", "That'll be the credential cache after the server "
+                          "move. Can you try disconnecting the drive and "
+                          "reconnecting it?"),
+            ("casey.nguyen", "That did it, thank you!"),
+        ],
+    ),
+    (
+        "jordan.lee", "", 4,
+        [
+            ("jordan.lee", "Hi, is anyone around? My headset isn't being "
+                           "picked up in Teams and I have a call at 11."),
+        ],
+    ),
+]
+
+
 def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
 
@@ -432,7 +458,7 @@ def _now() -> datetime:
 def wipe(db) -> None:
     """Remove all demo content. Order matters for foreign keys."""
     for model in (CommentDB, AttachmentDB, TicketDB, InviteCodeDB, UserDB,
-                  ArticleDB, AnnouncementDB):
+                  ArticleDB, AnnouncementDB, MessageDB, ConversationDB):
         db.query(model).delete()
     db.commit()
 
@@ -442,7 +468,7 @@ def seed(db) -> dict:
     now = _now()
     used_refs: set = set()
     counts = {"users": 0, "tickets": 0, "comments": 0, "articles": 0,
-              "deleted": 0, "announcements": 0}
+              "deleted": 0, "announcements": 0, "conversations": 0}
 
     # ── Users ──
     for name, email, role, _advertised in USERS:
@@ -575,6 +601,30 @@ def seed(db) -> dict:
 
     db.commit()
 
+    # ── Chat ──
+    for requester, technician, minutes_ago, lines in CONVERSATIONS:
+        start = now - timedelta(minutes=minutes_ago)
+        convo = ConversationDB(
+            requester=requester, technician=technician, subject="",
+            created_at=_iso(start), updated_at=_iso(start),
+            # The requester has read their own thread; an unclaimed one has
+            # never been opened by staff, so it shows as unread in the queue.
+            requester_read_at=_iso(now),
+            technician_read_at=_iso(now) if technician else "",
+        )
+        db.add(convo)
+        db.flush()
+
+        when = start
+        for sender, body in lines:
+            db.add(MessageDB(conversation_id=convo.id, sender=sender,
+                             body=body, created_at=_iso(when)))
+            when += timedelta(minutes=random.randint(1, 6))
+        convo.updated_at = _iso(min(when, now))
+        counts["conversations"] += 1
+
+    db.commit()
+
     # ── Trash ──
     for (title, category, priority, requester, technician,
          days_ago, deleted_days_ago, deleted_by, description) in DELETED_TICKETS:
@@ -630,7 +680,7 @@ def main() -> int:
 
         print("Demo data created:")
         for key in ("users", "tickets", "comments", "articles", "deleted",
-                    "announcements"):
+                    "announcements", "conversations"):
             label = "tickets in trash" if key == "deleted" else key
             print(f"  {counts[key]:>3} {label}")
         print()

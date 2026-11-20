@@ -112,6 +112,28 @@ Codes are stored as SHA-256 hashes, expire after 15 minutes, and lock out
 after 5 wrong attempts. Wrong code, expired code and unknown username all
 return the same message, so the endpoint can't be used to discover accounts.
 
+### Live chat
+
+A bubble in the bottom-right corner of every signed-in page. A requester
+types and the thread lands in a queue; the first technician to reply owns it,
+so answering and claiming are one action rather than two. Technicians can
+also start a thread with a requester, and own it from the start.
+
+**Polled, not socketed.** Render's free tier sleeps after 15 minutes of
+silence, which drops every open WebSocket and means reconnect handling plus a
+cold start before the first message lands. A 3-second poll while a thread is
+open is imperceptible in a helpdesk conversation, and each poll doubles as
+the keep-alive a socket would need a heartbeat for. Polling drops to 15
+seconds when the panel is closed and stops entirely when the tab is hidden.
+
+Messages page by id rather than timestamp. Timestamps here have one-second
+granularity, so two messages sent in the same second are indistinguishable —
+a timestamp cursor would repeat one or skip one.
+
+The widget is mounted beside the router, not inside a layout: every route
+builds its own layout instance, so anything living there is remounted on each
+navigation, which would collapse the panel and drop the open thread.
+
 ### Announcements
 
 Technicians and admins can post a notice that everyone with an account sees at
@@ -343,6 +365,7 @@ ticket_app/
         │   ├── Admin.jsx        Users + access codes
         │   └── Redeem.jsx       QR landing page
         └── components/
+            ├── ChatWidget.jsx   Floating messenger
             ├── TicketForm.jsx   Tabbed ticket detail
             ├── SurveyStep.jsx   Survey question renderer
             ├── SurveyAnswers.jsx  Read-only answers view
@@ -482,6 +505,12 @@ All endpoints except `/auth/register` and `/auth/login` require a bearer token.
 | `GET` | `/tickets/export/csv` | Honors the same filters |
 | `POST` | `/auth/verify` | Exchange a 6-digit code for a token |
 | `POST` | `/auth/resend-code` | Send another code. Always reports success |
+| `GET` | `/chat/poll` | Badge counts and thread list in one request |
+| `GET` | `/chat/conversations` | Threads. Requesters see only their own |
+| `POST` | `/chat/conversations` | Open a thread. Staff must name the requester |
+| `GET` | `/chat/conversations/{id}/messages` | `after_id` for incremental polling |
+| `POST` | `/chat/conversations/{id}/messages` | Send. A staff reply claims an unclaimed thread |
+| `POST` | `/chat/conversations/{id}/close` | Technician or admin |
 | `GET` | `/announcements/current` | The pinned notice, or null. Any signed-in user |
 | `GET` | `/announcements` | Pinned plus history, newest first |
 | `POST` | `/announcements` | Technician or admin. Retires the previous notice |

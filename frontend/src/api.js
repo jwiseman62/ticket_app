@@ -222,6 +222,32 @@ export async function exportCsv(params = {}) {
 
 export const getStats = () => request('/stats')
 
+// ── Chat ──────────────────────────────────────────────────────────── //
+//
+// Polled, not socketed — see the note in main.py. chatPoll() is the one the
+// widget calls on a timer; it returns everything the badge and thread list
+// need in a single request.
+
+export const chatPoll = () => request('/chat/poll')
+
+export const listConversations = (includeClosed = false) =>
+  request(`/chat/conversations?include_closed=${includeClosed}`)
+
+export const startConversation = (body) =>
+  request('/chat/conversations', { method: 'POST', body: JSON.stringify(body) })
+
+/** `afterId` of 0 fetches the whole thread; anything else fetches new ones. */
+export const listMessages = (conversationId, afterId = 0) =>
+  request(`/chat/conversations/${conversationId}/messages?after_id=${afterId}`)
+
+export const sendMessage = (conversationId, body) =>
+  request(`/chat/conversations/${conversationId}/messages`, {
+    method: 'POST', body: JSON.stringify({ body }),
+  })
+
+export const closeConversation = (conversationId) =>
+  request(`/chat/conversations/${conversationId}/close`, { method: 'POST' })
+
 // ── Email verification ────────────────────────────────────────────── //
 
 export const verifyCode = (username, code) =>

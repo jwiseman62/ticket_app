@@ -5,6 +5,7 @@ import { ToastProvider } from './context/ToastContext.jsx'
 import { ConfirmProvider } from './context/ConfirmContext.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import Navbar    from './components/Navbar.jsx'
+import ChatWidget from './components/ChatWidget.jsx'
 import Landing   from './pages/Landing.jsx'
 import Login     from './pages/Login.jsx'
 import Register  from './pages/Register.jsx'
@@ -60,6 +61,20 @@ function AdminLayout({ children }) {
   )
 }
 
+/**
+ * Rendered once, beside the router rather than inside it.
+ *
+ * Every private route constructs its own <PrivateLayout>, so anything living
+ * in that layout is unmounted and remounted on each navigation — which reset
+ * the chat panel to collapsed and dropped the open thread. Out here it
+ * survives route changes, which is the whole point of a persistent
+ * messenger. It renders nothing when signed out.
+ */
+function GlobalChat() {
+  const { user } = useAuth()
+  return user ? <ChatWidget /> : null
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -99,6 +114,8 @@ export default function App() {
             <BrowserRouter>
               <ErrorBoundary>
                 <AppRoutes />
+                {/* Sibling of the routes, so navigating doesn't remount it. */}
+                <GlobalChat />
               </ErrorBoundary>
             </BrowserRouter>
           </AuthProvider>

@@ -36,6 +36,8 @@ from models import (
     TicketCreate, TicketDB, TicketOut, TicketStatusUpdate, TicketUpdate,
     InviteCodeDB, InviteCreate, InviteOut, InviteRedeem,
     AdminUserCreate, AnnouncementDB, AnnouncementIn, AnnouncementOut,
+    ConversationDB, ConversationOut, ConversationStart,
+    MessageDB, MessageIn, MessageOut,
     ResendCodeRequest, VerifyRequest,
     UserCreate, UserDB, UserEmailUpdate, UserOut, UserPasswordReset, UserRoleUpdate,
 )
@@ -1117,7 +1119,10 @@ def get_stats(db: Session = Depends(get_db), _: UserDB = Depends(get_current_use
         "overdue":     overdue,
         "recent": [
             {
-                "id": t.id, "title": t.title, "status": t.status,
+                # ref must be here: the dashboard formats ticket names with
+                # the same helper as everywhere else, and without it that
+                # helper silently falls back to the old TKT-### form.
+                "id": t.id, "ref": t.ref, "title": t.title, "status": t.status,
                 "priority": t.priority, "requester": t.requester,
                 "technician": t.technician, "updated_at": t.updated_at,
                 "due_date": t.due_date, "category": t.category,
@@ -1137,7 +1142,7 @@ def export_csv(search: str = Query(""), status_filter: str = Query("All"),
                              priority_filter, view, current_user.name.lower())
     output = io.StringIO()
     w = csv.writer(output)
-    w.writerow(["id", "title", "description", "status", "priority", "category",
+    w.writerow(["reference", "title", "description", "status", "priority", "category",
                 "created_at", "updated_at", "requester", "technician", "due_date",
                 "survey", "history"])
     for t in tickets:
@@ -1148,6 +1153,229 @@ def export_csv(search: str = Query(""), status_filter: str = Query("All"),
     output.seek(0)
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
                              headers={"Content-Disposition": "attachment; filename=tickets.csv"})
+
+
+# ═══════════════════════════ Chat ═══════════════════════════ #
+#
+# Live chat between a requester and whichever technician picks the thread up.
+# Delivery is by polling rather than WebSockets: Render's free tier sleeps
+# after 15 minutes of silence, which drops every open socket, and a couple of
+# seconds of latency is imperceptible in a helpdesk conversation. Each poll
+# doubles as the keep-alive that a socket would otherwise need a heartbeat
+# for.
+
+
+def _is_staff(user: UserDB) -> bool:
+    return user.role != "Requester"
+
+
+def _visible_conversations(db: Session, user: UserDB):
+    """Threads this person is allowed to see.
+
+    Staff see everything, which matches the ticket list — handover between
+    technicians is normal and a thread nobody can read is a thread nobody can
+    pick up. Requesters see only their own.
+    """
+    q = db.query(ConversationDB)
+    if _is_staff(user):
+        return q
+    return q.filter(ConversationDB.requester == user.name)
+
+
+def _get_conversation_or_404(db: Session, conversation_id: int,
+                             user: UserDB) -> ConversationDB:
+    convo = (_visible_conversations(db, user)
+             .filter(ConversationDB.id == conversation_id).first())
+    if not convo:
+        # 404 rather than 403 for someone else's thread: a requester probing
+        # ids shouldn't be able to learn which ones exist.
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return convo
+
+
+def _unread_for(db: Session, convo: ConversationDB, user: UserDB) -> int:
+    """Messages from the other side since this user last looked."""
+    mark = (convo.technician_read_at if _is_staff(user)
+            else convo.requester_read_at) or ""
+    q = (db.query(MessageDB)
+           .filter(MessageDB.conversation_id == convo.id)
+           .filter(MessageDB.sender != user.name))
+    if mark:
+        q = q.filter(MessageDB.created_at > mark)
+    return q.count()
+
+
+def _decorate(db: Session, convo: ConversationDB, user: UserDB) -> ConversationOut:
+    last = (db.query(MessageDB)
+              .filter(MessageDB.conversation_id == convo.id)
+              .order_by(MessageDB.created_at.desc(), MessageDB.id.desc())
+              .first())
+    out = ConversationOut.model_validate(convo)
+    out.unread = _unread_for(db, convo, user)
+    if last:
+        out.last_message = (last.body[:120] + "…") if len(last.body) > 120 else last.body
+        out.last_sender = last.sender
+    return out
+
+
+@app.get("/chat/conversations", response_model=List[ConversationOut])
+def list_conversations(include_closed: bool = Query(False),
+                       db: Session = Depends(get_db),
+                       current_user: UserDB = Depends(get_current_user)):
+    """Threads, most recently active first."""
+    q = _visible_conversations(db, current_user)
+    if not include_closed:
+        q = q.filter(ConversationDB.closed_at == "")
+    rows = q.order_by(ConversationDB.updated_at.desc()).limit(100).all()
+    return [_decorate(db, c, current_user) for c in rows]
+
+
+@app.post("/chat/conversations", response_model=ConversationOut, status_code=201)
+def start_conversation(body: ConversationStart, db: Session = Depends(get_db),
+                       current_user: UserDB = Depends(get_current_user)):
+    """Open a thread and post its first message.
+
+    A requester opens one for themselves and it lands unclaimed in the queue.
+    A technician opens one *for* a requester and owns it from the start,
+    since they're the one reaching out.
+    """
+    now = utc_now_iso()
+
+    if _is_staff(current_user):
+        target = (body.requester or "").strip()
+        if not target:
+            raise HTTPException(
+                status_code=400, detail="Choose who you want to message")
+        other = db.query(UserDB).filter(UserDB.name == target).first()
+        if not other:
+            raise HTTPException(status_code=404, detail="No such user")
+        if _is_staff(other):
+            raise HTTPException(
+                status_code=400,
+                detail="Chat threads are between the helpdesk and a requester",
+            )
+        convo = ConversationDB(
+            requester=other.name, technician=current_user.name,
+            subject=body.subject.strip()[:120], created_at=now, updated_at=now,
+            technician_read_at=now,
+        )
+    else:
+        # Reuse an open thread rather than stacking duplicates in the queue
+        # every time the widget is reopened.
+        existing = (db.query(ConversationDB)
+                      .filter(ConversationDB.requester == current_user.name)
+                      .filter(ConversationDB.closed_at == "")
+                      .order_by(ConversationDB.updated_at.desc()).first())
+        convo = existing or ConversationDB(
+            requester=current_user.name, technician="",
+            subject=body.subject.strip()[:120], created_at=now, updated_at=now,
+            requester_read_at=now,
+        )
+
+    db.add(convo)
+    db.flush()
+
+    db.add(MessageDB(conversation_id=convo.id, sender=current_user.name,
+                     body=body.body, created_at=now))
+    convo.updated_at = now
+    db.commit()
+    db.refresh(convo)
+    return _decorate(db, convo, current_user)
+
+
+@app.get("/chat/conversations/{conversation_id}/messages",
+         response_model=List[MessageOut])
+def list_messages(conversation_id: int, after_id: int = Query(0, ge=0),
+                  db: Session = Depends(get_db),
+                  current_user: UserDB = Depends(get_current_user)):
+    """Messages in a thread. `after_id` fetches only what's new, for polling.
+
+    Paged by id rather than timestamp on purpose. Timestamps here have
+    one-second granularity, so two messages sent in the same second are
+    indistinguishable — a timestamp cursor would either repeat one or skip
+    one. Ids are monotonic and unambiguous, and they survive a URL without
+    encoding, which an ISO string with its "+00:00" offset does not.
+    """
+    convo = _get_conversation_or_404(db, conversation_id, current_user)
+
+    q = db.query(MessageDB).filter(MessageDB.conversation_id == convo.id)
+    if after_id:
+        q = q.filter(MessageDB.id > after_id)
+    rows = q.order_by(MessageDB.id).limit(500).all()
+
+    # Opening a thread marks it read for this side.
+    now = utc_now_iso()
+    if _is_staff(current_user):
+        convo.technician_read_at = now
+    else:
+        convo.requester_read_at = now
+    db.commit()
+    return rows
+
+
+@app.post("/chat/conversations/{conversation_id}/messages",
+          response_model=MessageOut, status_code=201)
+def post_message(conversation_id: int, body: MessageIn,
+                 db: Session = Depends(get_db),
+                 current_user: UserDB = Depends(get_current_user)):
+    """Send a message. A technician replying to an unclaimed thread takes it."""
+    convo = _get_conversation_or_404(db, conversation_id, current_user)
+    if str(convo.closed_at or ""):
+        raise HTTPException(status_code=400, detail="This conversation is closed")
+
+    now = utc_now_iso()
+
+    # First staff reply claims the thread, so answering and claiming are the
+    # same action — nobody has to remember to press a button first.
+    if _is_staff(current_user) and not str(convo.technician or ""):
+        convo.technician = current_user.name
+
+    msg = MessageDB(conversation_id=convo.id, sender=current_user.name,
+                    body=body.body, created_at=now)
+    db.add(msg)
+    convo.updated_at = now
+    if _is_staff(current_user):
+        convo.technician_read_at = now
+    else:
+        convo.requester_read_at = now
+    db.commit()
+    db.refresh(msg)
+    return msg
+
+
+@app.post("/chat/conversations/{conversation_id}/close",
+          response_model=ConversationOut)
+def close_conversation(conversation_id: int, db: Session = Depends(get_db),
+                       current_user: UserDB = Depends(require_staff)):
+    """End a thread. Staff only; the history stays readable."""
+    convo = _get_conversation_or_404(db, conversation_id, current_user)
+    convo.closed_at = utc_now_iso()
+    db.commit()
+    db.refresh(convo)
+    return _decorate(db, convo, current_user)
+
+
+@app.get("/chat/poll")
+def chat_poll(db: Session = Depends(get_db),
+              current_user: UserDB = Depends(get_current_user)):
+    """One small request the widget can call on a timer.
+
+    Returns just enough to drive the badge and the thread list, so an idle
+    widget costs a single query rather than one per conversation.
+    """
+    rows = (_visible_conversations(db, current_user)
+            .filter(ConversationDB.closed_at == "")
+            .order_by(ConversationDB.updated_at.desc()).limit(100).all())
+
+    conversations = [_decorate(db, c, current_user) for c in rows]
+    waiting = sum(1 for c in rows if not str(c.technician or "")) \
+        if _is_staff(current_user) else 0
+
+    return {
+        "unread": sum(c.unread for c in conversations),
+        "waiting": waiting,
+        "conversations": conversations,
+    }
 
 
 # ══════════════════════ Announcements ══════════════════════ #

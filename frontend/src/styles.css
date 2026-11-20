@@ -4793,3 +4793,276 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .review-actions .btn { width: 100%; }
   .verify-actions .btn { flex: 1; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  Chat widget — fixed bottom-right on every signed-in page           */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+.chat-bubble {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 900;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+  transition: transform .12s, box-shadow .15s;
+}
+
+.chat-bubble:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .3);
+}
+
+.chat-bubble-badge {
+  position: absolute;
+  top: -.2rem;
+  right: -.2rem;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 .3rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  border: 2px solid var(--surface);
+}
+
+.chat-panel {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 900;
+  width: 22rem;
+  /* Tall enough to hold a conversation, never taller than the window. */
+  height: min(32rem, calc(100vh - 2.5rem));
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .28);
+  overflow: hidden;
+  animation: fadeIn .12s ease;
+}
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .6rem .75rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.chat-head-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-head-text strong {
+  font-size: .85rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-head-sub {
+  font-size: .68rem;
+  color: var(--text-muted);
+}
+
+.chat-icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: .9rem;
+  cursor: pointer;
+  padding: .2rem .35rem;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+
+.chat-icon-btn:hover { background: var(--border); color: var(--text); }
+
+.chat-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.chat-empty {
+  margin: auto;
+  text-align: center;
+  font-size: .78rem;
+  color: var(--text-muted);
+  padding: 1rem;
+}
+
+/* ── Thread list ── */
+
+.chat-list { list-style: none; margin: 0; padding: 0; }
+
+.chat-list-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .15rem .5rem;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: .55rem .25rem;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.chat-list-item:hover { background: var(--surface-2); }
+
+.chat-list-top {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .82rem;
+}
+
+.chat-list-preview {
+  grid-column: 1;
+  font-size: .72rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-list-time {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: .66rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Unclaimed — the thing a technician is scanning for. */
+.chat-pill {
+  font-size: .6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  background: var(--warn-fg-2);
+  color: #fff;
+  padding: .05rem .3rem;
+  border-radius: 999px;
+}
+
+.chat-count {
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 .25rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: .64rem;
+  font-weight: 700;
+  line-height: 1.1rem;
+  text-align: center;
+}
+
+/* ── Messages ── */
+
+.chat-msg {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
+  padding: .4rem .6rem;
+  border-radius: 10px;
+  font-size: .82rem;
+  line-height: 1.45;
+}
+
+.chat-msg-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.chat-msg.mine {
+  align-self: flex-end;
+  background: var(--primary);
+  color: #fff;
+  border-bottom-right-radius: 3px;
+}
+
+.chat-msg.theirs {
+  align-self: flex-start;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-bottom-left-radius: 3px;
+}
+
+.chat-msg-sender {
+  font-size: .66rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: .1rem;
+}
+
+.chat-msg-time {
+  font-size: .62rem;
+  opacity: .75;
+  margin-top: .15rem;
+  align-self: flex-end;
+}
+
+/* ── Compose ── */
+
+.chat-compose {
+  display: flex;
+  align-items: flex-end;
+  gap: .4rem;
+  padding: .55rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex: 0 0 auto;
+}
+
+.chat-compose textarea {
+  flex: 1;
+  resize: none;
+  min-height: 2.1rem;
+  max-height: 6rem;
+  font-size: .82rem;
+  padding: .4rem .5rem;
+}
+
+/* On a phone the panel takes the screen rather than floating in a corner
+   too small to type in. */
+@media (max-width: 560px) {
+  .chat-panel {
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+  }
+
+  .chat-bubble { right: 1rem; bottom: 1rem; }
+}
