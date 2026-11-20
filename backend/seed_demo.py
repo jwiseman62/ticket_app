@@ -22,7 +22,8 @@ from datetime import datetime, timedelta, timezone
 from auth import hash_password
 from database import Base, SessionLocal, engine, migrate
 from models import (
-    ArticleDB, AttachmentDB, CommentDB, InviteCodeDB, TicketDB, UserDB,
+    AnnouncementDB, ArticleDB, AttachmentDB, CommentDB, InviteCodeDB,
+    TicketDB, UserDB,
 )
 from seed_articles import SEED_ARTICLES
 
@@ -377,6 +378,36 @@ DELETED_TICKETS = [
 ]
 
 
+# One pinned announcement plus a little history, so the dashboard banner and
+# the past-announcements list both have something to show in the demo.
+# (title, body, level, author, days_ago, retired_days_ago or None if pinned)
+ANNOUNCEMENTS = [
+    (
+        "New: ticket archive and trash",
+        "Closed tickets now drop off the board after 24 hours and move to the "
+        "Archive, where they stay searchable by date and category. Deleting a "
+        "ticket sends it to the Trash for 30 days instead of removing it, so a "
+        "mis-click is no longer permanent.",
+        "info", "demo.admin", 2, None,
+    ),
+    (
+        "Mail server maintenance Saturday",
+        "Email will be unavailable Saturday 2-4am while we move to the new "
+        "server. Tickets filed during the window will still reach us — you "
+        "just won't get the confirmation email until it's back.",
+        "warning", "demo.tech", 9, 6,
+    ),
+    (
+        "VPN certificate expired - resolved",
+        "The VPN certificate expired overnight and was blocking new "
+        "connections. A replacement is deployed and connections are working "
+        "again. If you still can't connect, quit the client fully and reopen "
+        "it so it picks up the new certificate.",
+        "critical", "demo.tech", 21, 19,
+    ),
+]
+
+
 def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
 
@@ -387,7 +418,8 @@ def _now() -> datetime:
 
 def wipe(db) -> None:
     """Remove all demo content. Order matters for foreign keys."""
-    for model in (CommentDB, AttachmentDB, TicketDB, InviteCodeDB, UserDB, ArticleDB):
+    for model in (CommentDB, AttachmentDB, TicketDB, InviteCodeDB, UserDB,
+                  ArticleDB, AnnouncementDB):
         db.query(model).delete()
     db.commit()
 
@@ -396,7 +428,7 @@ def seed(db) -> dict:
     """Create users, tickets, comments and knowledge base articles."""
     now = _now()
     counts = {"users": 0, "tickets": 0, "comments": 0, "articles": 0,
-              "deleted": 0}
+              "deleted": 0, "announcements": 0}
 
     # ── Users ──
     for name, email, role, _advertised in USERS:
@@ -515,6 +547,20 @@ def seed(db) -> dict:
 
     db.commit()
 
+    # ── Announcements ──
+    for title, body, level, author, days_ago, retired_days in ANNOUNCEMENTS:
+        created = now - timedelta(days=days_ago, hours=random.randint(0, 10))
+        retired = ("" if retired_days is None
+                   else _iso(now - timedelta(days=retired_days)))
+        db.add(AnnouncementDB(
+            title=title, body=body, level=level, author=author,
+            created_at=_iso(created), updated_at=_iso(created),
+            retired_at=retired,
+        ))
+        counts["announcements"] += 1
+
+    db.commit()
+
     # ── Trash ──
     for (title, category, priority, requester, technician,
          days_ago, deleted_days_ago, deleted_by, description) in DELETED_TICKETS:
@@ -569,7 +615,8 @@ def main() -> int:
         counts = reseed(db) if args.reset else seed(db)
 
         print("Demo data created:")
-        for key in ("users", "tickets", "comments", "articles", "deleted"):
+        for key in ("users", "tickets", "comments", "articles", "deleted",
+                    "announcements"):
             label = "tickets in trash" if key == "deleted" else key
             print(f"  {counts[key]:>3} {label}")
         print()

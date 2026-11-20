@@ -152,6 +152,20 @@ def get_current_user(
     return user
 
 
+def require_staff(current_user: UserDB = Depends(get_current_user)) -> UserDB:
+    """Dependency for routes open to technicians and admins but not requesters.
+
+    Role "Both" is this app's name for an admin, who is also a technician, so
+    the check is framed as "not a Requester" rather than listing the two
+    roles that qualify.
+    """
+    if current_user.role == "Requester":
+        raise HTTPException(
+            status_code=403, detail="Technician or admin access required"
+        )
+    return current_user
+
+
 def require_admin(current_user: UserDB = Depends(get_current_user)) -> UserDB:
     """Dependency for admin-only routes."""
     if current_user.role != "Both":

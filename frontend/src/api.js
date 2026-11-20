@@ -204,6 +204,28 @@ export async function exportCsv(params = {}) {
 
 export const getStats = () => request('/stats')
 
+// ── Announcements ─────────────────────────────────────────────────── //
+//
+// One announcement is pinned to the dashboard at a time; the rest are
+// history. Everyone with an account can read; only technicians and admins
+// can write.
+
+export const getCurrentAnnouncement = () => request('/announcements/current')
+
+export const listAnnouncements = () => request('/announcements')
+
+export const createAnnouncement = (body) =>
+  request('/announcements', { method: 'POST', body: JSON.stringify(body) })
+
+export const updateAnnouncement = (id, body) =>
+  request(`/announcements/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+
+export const retireAnnouncement = (id) =>
+  request(`/announcements/${id}/retire`, { method: 'POST' })
+
+export const deleteAnnouncement = (id) =>
+  request(`/announcements/${id}`, { method: 'DELETE' })
+
 // ── Archive and trash ─────────────────────────────────────────────── //
 //
 // Closed tickets leave the dashboard after a grace period but are kept

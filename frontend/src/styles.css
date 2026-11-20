@@ -47,6 +47,7 @@
 
   /* Warning panel — priority suggestion */
   --warn-bg:     #fffbeb;
+  --danger-bg:   #fef2f2;
   --warn-border: #fde68a;
   --warn-fg:     #92400e;
   --warn-fg-2:   #a16207;
@@ -104,6 +105,7 @@
   --alert-success-bg: #052e16;  --alert-success-fg: #86efac;  --alert-success-border: #166534;
 
   --warn-bg:     #422006;
+  --danger-bg:   #450a0a;
   --warn-border: #78350f;
   --warn-fg:     #fcd34d;
   --warn-fg-2:   #fbbf24;
@@ -4409,4 +4411,246 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
   .tl-row-actions { width: 100%; }
   .tl-row-actions .quick-btn { flex: 1; }
+}
+
+/* Six nav links stopped fitting at laptop widths once Announcements was
+   added. Tightening spacing and type between the mobile breakpoint and
+   1200px keeps every label readable instead of truncating one or hiding it
+   behind a menu. */
+@media (min-width: 861px) and (max-width: 1200px) {
+  .navbar { padding: 0 .85rem; gap: .6rem; }
+  .navbar-links { gap: .1rem; }
+  .nav-link { padding: .35rem .5rem; font-size: .82rem; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/*  Announcements — dashboard banner and the announcements page        */
+/* ═══════════════════════════════════════════════════════════════════ */
+/*
+   Three levels, each a left stripe and a tinted background. The tints come
+   from the theme variables, so dark mode follows without a second set of
+   rules. Level is the only thing that varies between them.
+*/
+
+.ann-info     { --ann-accent: var(--primary);     --ann-tint: var(--accent-tint); }
+.ann-warning  { --ann-accent: var(--warn-fg-2);   --ann-tint: var(--warn-bg); }
+.ann-critical { --ann-accent: var(--danger);      --ann-tint: var(--danger-bg); }
+
+/* ── Dashboard banner ────────────────────────────────────────────── */
+
+.ann-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--ann-tint);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--ann-accent);
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.ann-banner-main { flex: 1 1 20rem; min-width: 0; }
+
+.ann-banner-head {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .35rem;
+}
+
+.ann-banner-meta {
+  font-size: .72rem;
+  color: var(--text-muted);
+}
+
+.ann-banner-title {
+  margin: 0 0 .3rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ann-banner-body {
+  margin: 0;
+  font-size: .85rem;
+  line-height: 1.55;
+  color: var(--text);
+  /* Announcements are typed in a textarea, so newlines are meaningful. */
+  white-space: pre-wrap;
+}
+
+.ann-banner-actions { flex: 0 0 auto; }
+
+/* Shown only to staff when nothing is pinned — a quiet way in, not a
+   placeholder that shouts at requesters about an empty board. */
+.ann-banner-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: .6rem .85rem;
+  margin-bottom: 1.25rem;
+  font-size: .78rem;
+  color: var(--text-muted);
+}
+
+/* ── Level badges ────────────────────────────────────────────────── */
+
+.ann-badge {
+  background: var(--ann-accent);
+  color: #fff;
+  border: none;
+}
+
+.ann-badge-info     { background: var(--primary); }
+.ann-badge-warning  { background: var(--warn-fg-2); }
+.ann-badge-critical { background: var(--danger); }
+
+/* ── Announcements page ──────────────────────────────────────────── */
+
+.ann-page {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 1.75rem 1.5rem 3rem;
+  width: 100%;
+}
+
+.ann-compose {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1.75rem;
+  box-shadow: var(--shadow);
+}
+
+.ann-compose-title {
+  margin: 0 0 .25rem;
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ann-compose-note {
+  margin: 0 0 .85rem;
+  font-size: .76rem;
+  color: var(--text-muted);
+}
+
+.ann-optional {
+  font-weight: 400;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.ann-count {
+  text-align: right;
+  font-size: .68rem;
+  color: var(--text-muted);
+  margin-top: .2rem;
+}
+
+.ann-hint {
+  margin: .3rem 0 0;
+  font-size: .72rem;
+  color: var(--text-muted);
+}
+
+.ann-compose-actions {
+  display: flex;
+  gap: .45rem;
+  margin-top: .5rem;
+}
+
+.ann-section {
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  margin: 0 0 .6rem;
+}
+
+.ann-history { display: flex; flex-direction: column; gap: .6rem; }
+
+.ann-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--ann-accent, var(--border));
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+  margin-bottom: 1.75rem;
+}
+
+/* History entries are reference material, not announcements in force —
+   muted so the pinned one stays visually dominant. */
+.ann-history .ann-card {
+  margin-bottom: 0;
+  background: var(--surface-2);
+  border-left-color: var(--border);
+}
+
+.ann-card.pinned { background: var(--ann-tint); }
+
+.ann-card-head {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .4rem;
+}
+
+.ann-pin {
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--ann-accent);
+}
+
+.ann-meta {
+  font-size: .72rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.ann-card-title {
+  margin: 0 0 .3rem;
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ann-card-body {
+  margin: 0;
+  font-size: .85rem;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.ann-card-actions {
+  display: flex;
+  gap: .35rem;
+  margin-top: .75rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .ann-page { padding: 1.25rem 1rem 2.5rem; }
+
+  .ann-meta { margin-left: 0; width: 100%; }
+
+  .ann-banner-actions,
+  .ann-banner-actions .btn,
+  .ann-banner-empty .btn { width: 100%; }
+
+  .ann-card-actions .btn { flex: 1; }
 }

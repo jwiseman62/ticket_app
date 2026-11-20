@@ -124,6 +124,30 @@ class CommentDB(Base):
     created_at:  Mapped[str] = mapped_column(String, default="")
 
 
+class AnnouncementDB(Base):
+    """A notice from the helpdesk to everyone with an account.
+
+    Exactly one announcement is pinned to the dashboard at a time: the most
+    recent row whose retired_at is empty. Posting a new one retires the
+    previous, so the pinned slot can never hold two. Retired rows stay as
+    history rather than being deleted, so "what did they say about the
+    migration last month?" is still answerable.
+    """
+
+    __tablename__ = "announcements"
+
+    id:         Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    title:      Mapped[str] = mapped_column(String, default="")
+    body:       Mapped[str] = mapped_column(Text)
+    # info | warning | critical — drives the banner's colour, nothing else.
+    level:      Mapped[str] = mapped_column(String, default="info")
+    author:     Mapped[str] = mapped_column(String)
+    created_at: Mapped[str] = mapped_column(String, default="", index=True)
+    updated_at: Mapped[str] = mapped_column(String, default="")
+    # Empty means this is the pinned one. Non-empty is history.
+    retired_at: Mapped[str] = mapped_column(String, default="", index=True)
+
+
 class AttachmentDB(Base):
     __tablename__ = "attachments"
 
@@ -279,6 +303,62 @@ class UserEmailUpdate(BaseModel):
     email: str
 
     _v_email = field_validator("email")(validate_email)
+
+
+VALID_ANNOUNCEMENT_LEVELS = ("info", "warning", "critical")
+
+
+class AnnouncementIn(BaseModel):
+    """What a technician or admin submits."""
+    title: str = ""
+    body: str
+    level: str = "info"
+
+    @field_validator("body")
+    @classmethod
+    def _body_not_empty(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("An announcement needs a message")
+        if len(v) > 4000:
+            raise ValueError("Announcements are limited to 4000 characters")
+        return v
+
+    @field_validator("title")
+    @classmethod
+    def _title_length(cls, v: str) -> str:
+        v = (v or "").strip()
+        if len(v) > 120:
+            raise ValueError("Title is limited to 120 characters")
+        return v
+
+    @field_validator("level")
+    @classmethod
+    def _check_level(cls, v: str) -> str:
+        if v not in VALID_ANNOUNCEMENT_LEVELS:
+            raise ValueError(
+                f"Level must be one of: {', '.join(VALID_ANNOUNCEMENT_LEVELS)}"
+            )
+        return v
+
+
+class AnnouncementOut(BaseModel):
+    id: int
+    title: str = ""
+    body: str
+    level: str = "info"
+    author: str
+    created_at: str = ""
+    updated_at: str = ""
+    retired_at: str = ""
+
+    model_config = {"from_attributes": True}
+
+    @field_validator("title", "level", "created_at", "updated_at", "retired_at",
+                     mode="before")
+    @classmethod
+    def _no_nulls(cls, v):
+        return "" if v is None else v
 
 
 class AdminUserCreate(BaseModel):

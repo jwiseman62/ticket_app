@@ -11,6 +11,7 @@ import Register  from './pages/Register.jsx'
 import Home      from './pages/Home.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import TicketDetail  from './pages/TicketDetail.jsx'
+import Announcements from './pages/Announcements.jsx'
 import Archive       from './pages/Archive.jsx'
 import KnowledgeBase from './pages/KnowledgeBase.jsx'
 import NewTicket     from './pages/NewTicket.jsx'
@@ -73,6 +74,7 @@ function AppRoutes() {
       <Route path="/dashboard" element={<PrivateLayout><Home /></PrivateLayout>} />
       <Route path="/tickets"   element={<PrivateLayout><Dashboard /></PrivateLayout>} />
       <Route path="/tickets/:id" element={<PrivateLayout><TicketDetail /></PrivateLayout>} />
+      <Route path="/announcements" element={<PrivateLayout><Announcements /></PrivateLayout>} />
       <Route path="/archive"   element={<PrivateLayout><Archive /></PrivateLayout>} />
       <Route path="/kb"        element={<PrivateLayout><KnowledgeBase /></PrivateLayout>} />
       <Route path="/new"       element={<PrivateLayout><NewTicket /></PrivateLayout>} />

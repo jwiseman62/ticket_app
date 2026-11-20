@@ -13,6 +13,7 @@ export default function Navbar() {
     { to: '/',          label: 'Home' },
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/tickets',   label: 'Tickets'   },
+    { to: '/announcements', label: 'Announcements' },
     { to: '/archive',   label: 'Archive'   },
     { to: '/kb',        label: 'Knowledge Base' },
     // Admin tools live on their own page rather than cluttering the sidebar

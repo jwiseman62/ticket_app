@@ -6,7 +6,7 @@ import secrets
 import shutil
 import uuid
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 
 from fastapi import (
     Depends, FastAPI, File, Header, HTTPException, Query, Request,
@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session
 from auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES, LOCKOUT_MINUTES, clear_failed_logins,
     create_access_token, get_current_user, hash_password, is_locked_out,
-    register_failed_login, require_admin, utc_now, utc_now_iso, verify_password,
+    register_failed_login, require_admin, require_staff, utc_now, utc_now_iso,
+    verify_password,
 )
 from database import Base, describe_backend, engine, get_db, migrate
 from email_utils import send_notification
@@ -32,7 +33,7 @@ from models import (
     VALID_STATUSES,
     TicketCreate, TicketDB, TicketOut, TicketStatusUpdate, TicketUpdate,
     InviteCodeDB, InviteCreate, InviteOut, InviteRedeem,
-    AdminUserCreate,
+    AdminUserCreate, AnnouncementDB, AnnouncementIn, AnnouncementOut,
     UserCreate, UserDB, UserEmailUpdate, UserOut, UserPasswordReset, UserRoleUpdate,
 )
 from seed_articles import SEED_ARTICLES
@@ -907,6 +908,121 @@ def export_csv(search: str = Query(""), status_filter: str = Query("All"),
     output.seek(0)
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
                              headers={"Content-Disposition": "attachment; filename=tickets.csv"})
+
+
+# ══════════════════════ Announcements ══════════════════════ #
+#
+# Exactly one announcement is pinned at a time. Rather than a flag that two
+# rows could both hold, "pinned" is derived: the newest row with an empty
+# retired_at. Posting a new one retires whatever was pinned, so the invariant
+# is maintained at the one place that can break it.
+
+
+def _pinned(db: Session) -> Optional[AnnouncementDB]:
+    return (db.query(AnnouncementDB)
+              .filter(AnnouncementDB.retired_at == "")
+              .order_by(AnnouncementDB.created_at.desc(), AnnouncementDB.id.desc())
+              .first())
+
+
+def _retire_pinned(db: Session, when: str) -> None:
+    """Retire every currently-pinned announcement.
+
+    Written as "every" rather than "the one" deliberately: if a past bug or a
+    hand-edited database ever left two unretired, this quietly repairs it
+    instead of leaving a second notice to surface later.
+    """
+    for row in (db.query(AnnouncementDB)
+                  .filter(AnnouncementDB.retired_at == "").all()):
+        row.retired_at = when
+
+
+@app.get("/announcements/current", response_model=Optional[AnnouncementOut])
+def get_current_announcement(db: Session = Depends(get_db),
+                             _: UserDB = Depends(get_current_user)):
+    """The pinned announcement, or null. Everyone with an account can read it."""
+    return _pinned(db)
+
+
+@app.get("/announcements", response_model=List[AnnouncementOut])
+def list_announcements(limit: int = Query(50, ge=1, le=200),
+                       db: Session = Depends(get_db),
+                       _: UserDB = Depends(get_current_user)):
+    """Every announcement, newest first — the pinned one and the history."""
+    return (db.query(AnnouncementDB)
+              .order_by(AnnouncementDB.created_at.desc(), AnnouncementDB.id.desc())
+              .limit(limit).all())
+
+
+@app.post("/announcements", response_model=AnnouncementOut, status_code=201)
+def create_announcement(body: AnnouncementIn, db: Session = Depends(get_db),
+                        current_user: UserDB = Depends(require_staff)):
+    """Post a new announcement, retiring whatever was pinned before it."""
+    now = utc_now_iso()
+    _retire_pinned(db, now)
+
+    row = AnnouncementDB(
+        title=body.title, body=body.body, level=body.level,
+        author=current_user.name, created_at=now, updated_at=now,
+        retired_at="",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.put("/announcements/{announcement_id}", response_model=AnnouncementOut)
+def update_announcement(announcement_id: int, body: AnnouncementIn,
+                        db: Session = Depends(get_db),
+                        _: UserDB = Depends(require_staff)):
+    """Correct an announcement in place, without disturbing what is pinned.
+
+    Editing is for fixing a typo or adding detail, so a retired announcement
+    stays retired and a pinned one stays pinned.
+    """
+    row = db.query(AnnouncementDB).filter(
+        AnnouncementDB.id == announcement_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+
+    row.title = body.title
+    row.body = body.body
+    row.level = body.level
+    row.updated_at = utc_now_iso()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.post("/announcements/{announcement_id}/retire", response_model=AnnouncementOut)
+def retire_announcement(announcement_id: int, db: Session = Depends(get_db),
+                        _: UserDB = Depends(require_staff)):
+    """Take an announcement off the dashboard, keeping it in the history."""
+    row = db.query(AnnouncementDB).filter(
+        AnnouncementDB.id == announcement_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    if str(row.retired_at or ""):
+        raise HTTPException(status_code=400, detail="That announcement is already retired")
+
+    row.retired_at = utc_now_iso()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.delete("/announcements/{announcement_id}")
+def delete_announcement(announcement_id: int, db: Session = Depends(get_db),
+                        _: UserDB = Depends(require_admin)):
+    """Remove an announcement from the history for good. Admin only."""
+    row = db.query(AnnouncementDB).filter(
+        AnnouncementDB.id == announcement_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "deleted": announcement_id}
 
 
 @app.get("/tickets/archive", response_model=List[TicketOut])

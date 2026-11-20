@@ -145,7 +145,7 @@ export default function Landing() {
       {/* CTA banner */}
       <section className="cta-section">
         <div className="cta-inner">
-          <h2 className="cta-title">Ready to get organised?</h2>
+          <h2 className="cta-title">Ready to get organized?</h2>
           <p className="cta-body">Create your account in under a minute.</p>
           <div className="hero-ctas">
             {user ? (

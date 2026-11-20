@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import * as api from '../api.js'
 import EmptyState from '../components/EmptyState.jsx'
 import { SkeletonStatCards } from '../components/Skeleton.jsx'
+import AnnouncementBanner from '../components/AnnouncementBanner.jsx'
 import { smartTime, fullTimestamp } from '../utils/dates.js'
 
 // ── Sub-components ────────────────────────────────────────────────── //
@@ -91,6 +92,11 @@ export default function Home() {
 
   return (
     <div className="home-page">
+
+      {/* Announcements sit above everything, including the greeting: an
+          "email is down" notice is the first thing someone needs to see, not
+          the second. Renders nothing when there's nothing to say. */}
+      <AnnouncementBanner />
 
       {/* Header */}
       <div className="home-header">
