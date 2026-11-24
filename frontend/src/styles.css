@@ -5066,3 +5066,109 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
   .chat-bubble { right: 1rem; bottom: 1rem; }
 }
+
+/* ── Chat: people picker and new-message bar ─────────────────────── */
+
+.chat-newbar {
+  padding: .55rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex: 0 0 auto;
+}
+
+.btn-block { width: 100%; }
+
+.chat-search {
+  width: 100%;
+  margin-bottom: .5rem;
+  font-size: .82rem;
+  flex: 0 0 auto;
+}
+
+.chat-person {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: .5rem .25rem;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  flex: 0 0 auto;
+}
+
+.chat-person:hover { background: var(--surface-2); }
+
+/* The queue is the option most requesters want, so it reads as a choice
+   rather than another name in the list. */
+.chat-person-helpdesk {
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-border);
+  border-radius: var(--radius);
+  margin-bottom: .5rem;
+  padding: .55rem .6rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .1rem;
+}
+
+.chat-person-name { font-size: .83rem; font-weight: 600; color: var(--text); }
+
+.chat-person-role {
+  font-size: .68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.chat-person-helpdesk .chat-person-role { white-space: normal; }
+
+/* ── Landing footer: who built this and how to reach them ────────── */
+/*
+   Kept as its own group rather than mixed in with Sign In / Register:
+   those are things to do in the app, these are ways to contact a person,
+   and a bare "LinkedIn" sitting next to "Register" reads as neither.
+*/
+
+.footer-contact {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.footer-by {
+  font-size: .78rem;
+  color: rgba(255, 255, 255, .45);
+}
+
+.footer-contact a {
+  font-size: .8rem;
+  color: rgba(255, 255, 255, .55);
+  text-decoration: none;
+  /* Underlined on hover rather than always: three underlined items in a
+     row reads as clutter, but these need to look clickable on approach. */
+  transition: color .15s;
+}
+
+.footer-contact a:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  /* Stacked, the three groups need to read top-to-bottom rather than
+     spreading across a line that isn't wide enough for them. */
+  .footer-inner {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: .85rem;
+  }
+
+  .footer-contact { justify-content: center; gap: .85rem; }
+}

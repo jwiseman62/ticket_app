@@ -43,15 +43,15 @@ export default function Landing() {
       {/* Hero */}
       <section className="hero">
         <div className="hero-inner">
-          <div className="hero-badge">Tech Help</div>
+          <div className="hero-badge">IT Help Desk</div>
 
           <h1 className="hero-title">
-            Submit your tickets <br />
+            Manage IT tickets <br />
             <span className="hero-accent">without the chaos.</span>
           </h1>
 
           <p className="hero-body">
-            A simple, fast ticketing system for IT teams, IT freelancers, and anyone looking for a better way to fix their devices. Submit requests, track
+            A simple, fast ticketing system for IT teams. Submit requests, track
             progress, assign technicians, and close issues — all in one place.
           </p>
 
@@ -145,7 +145,7 @@ export default function Landing() {
       {/* CTA banner */}
       <section className="cta-section">
         <div className="cta-inner">
-          <h2 className="cta-title">Ready to get organized?</h2>
+          <h2 className="cta-title">Ready to get organised?</h2>
           <p className="cta-body">Create your account in under a minute.</p>
           <div className="hero-ctas">
             {user ? (
@@ -163,10 +163,20 @@ export default function Landing() {
       {/* Footer */}
       <footer className="landing-footer">
         <div className="footer-inner">
-          <span className="footer-brand">🎫 Tech Help Created By Jefferson Wiseman Email: jefferson.b.wiseman@gmail.com</span>
+          <span className="footer-brand">Tech Help</span>
           <div className="footer-links">
             <Link to="/login">Sign In</Link>
             <Link to="/register">Register</Link>
+          </div>
+          <div className="footer-contact">
+            <span className="footer-by">Built by Jefferson Wiseman</span>
+            <a
+              href="https://www.linkedin.com/in/jefferson-wiseman-718332155"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              LinkedIn
+            </a>
           </div>
         </div>
       </footer>

@@ -236,6 +236,10 @@ export const listConversations = (includeClosed = false) =>
 export const startConversation = (body) =>
   request('/chat/conversations', { method: 'POST', body: JSON.stringify(body) })
 
+/** Who you can message. Staff are listed first. */
+export const listChatPeople = (search = '') =>
+  request(`/chat/people?search=${encodeURIComponent(search)}`)
+
 /** `afterId` of 0 fetches the whole thread; anything else fetches new ones. */
 export const listMessages = (conversationId, afterId = 0) =>
   request(`/chat/conversations/${conversationId}/messages?after_id=${afterId}`)

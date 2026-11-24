@@ -16,7 +16,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from auth import (
@@ -1169,17 +1169,30 @@ def _is_staff(user: UserDB) -> bool:
     return user.role != "Requester"
 
 
+def _participants(convo: ConversationDB) -> tuple:
+    """(opener, other). `other` is empty on an unclaimed helpdesk thread."""
+    return str(convo.requester or ""), str(convo.technician or "")
+
+
+def _is_participant(convo: ConversationDB, user: UserDB) -> bool:
+    return user.name in _participants(convo)
+
+
 def _visible_conversations(db: Session, user: UserDB):
     """Threads this person is allowed to see.
 
-    Staff see everything, which matches the ticket list — handover between
-    technicians is normal and a thread nobody can read is a thread nobody can
-    pick up. Requesters see only their own.
+    Helpdesk threads are visible to all staff: that's what makes the queue a
+    queue, and handover between technicians is normal. Direct threads are
+    private to their two people — a technician has no business reading
+    another technician's messages, and "staff see everything" would mean
+    exactly that once anyone can message anyone.
     """
-    q = db.query(ConversationDB)
+    mine = or_(ConversationDB.requester == user.name,
+               ConversationDB.technician == user.name)
     if _is_staff(user):
-        return q
-    return q.filter(ConversationDB.requester == user.name)
+        return db.query(ConversationDB).filter(
+            or_(mine, ConversationDB.kind == "helpdesk"))
+    return db.query(ConversationDB).filter(mine)
 
 
 def _get_conversation_or_404(db: Session, conversation_id: int,
@@ -1193,10 +1206,33 @@ def _get_conversation_or_404(db: Session, conversation_id: int,
     return convo
 
 
+def _read_mark(convo: ConversationDB, user: UserDB) -> str:
+    """This user's own read marker, chosen by position rather than role.
+
+    Keying off role worked only while every thread was one requester and one
+    technician. Two technicians talking are both staff and would share a
+    marker, so each would see the other's reads as their own.
+    """
+    opener, other = _participants(convo)
+    if user.name == opener:
+        return str(convo.requester_read_at or "")
+    if user.name == other:
+        return str(convo.technician_read_at or "")
+    # A technician looking at an unclaimed queue thread they're not in yet.
+    return str(convo.technician_read_at or "")
+
+
+def _set_read_mark(convo: ConversationDB, user: UserDB, when: str) -> None:
+    opener, _ = _participants(convo)
+    if user.name == opener:
+        convo.requester_read_at = when
+    else:
+        convo.technician_read_at = when
+
+
 def _unread_for(db: Session, convo: ConversationDB, user: UserDB) -> int:
     """Messages from the other side since this user last looked."""
-    mark = (convo.technician_read_at if _is_staff(user)
-            else convo.requester_read_at) or ""
+    mark = _read_mark(convo, user)
     q = (db.query(MessageDB)
            .filter(MessageDB.conversation_id == convo.id)
            .filter(MessageDB.sender != user.name))
@@ -1212,6 +1248,17 @@ def _decorate(db: Session, convo: ConversationDB, user: UserDB) -> ConversationO
               .first())
     out = ConversationOut.model_validate(convo)
     out.unread = _unread_for(db, convo, user)
+
+    opener, other = _participants(convo)
+    counterpart = other if user.name == opener else opener
+    if str(convo.kind or "helpdesk") == "helpdesk" and not other:
+        # Nobody has picked it up; from the requester's side it's "the
+        # helpdesk", and from a technician's side it's the person waiting.
+        counterpart = "" if user.name == opener else opener
+    out.other = counterpart
+    if counterpart:
+        who = db.query(UserDB).filter(UserDB.name == counterpart).first()
+        out.other_role = who.role if who else ""
     if last:
         out.last_message = (last.body[:120] + "…") if len(last.body) > 120 else last.body
         out.last_sender = last.sender
@@ -1230,47 +1277,83 @@ def list_conversations(include_closed: bool = Query(False),
     return [_decorate(db, c, current_user) for c in rows]
 
 
+@app.get("/chat/people")
+def list_chat_people(search: str = Query(""), db: Session = Depends(get_db),
+                     current_user: UserDB = Depends(get_current_user)):
+    """Who this person can start a conversation with.
+
+    Everyone except yourself. Technicians are listed first because they're
+    who a requester usually wants, and a requester scanning for help
+    shouldn't have to read past their colleagues to find them.
+    """
+    term = search.strip().lower()
+    rows = db.query(UserDB).filter(UserDB.name != current_user.name).all()
+    if term:
+        rows = [u for u in rows
+                if term in u.name.lower() or term in (u.email or "").lower()]
+
+    rank = {"Both": 0, "Technician": 1, "Requester": 2}
+    rows.sort(key=lambda u: (rank.get(u.role, 3), u.name.lower()))
+    return [{"name": u.name, "role": u.role} for u in rows[:100]]
+
+
 @app.post("/chat/conversations", response_model=ConversationOut, status_code=201)
 def start_conversation(body: ConversationStart, db: Session = Depends(get_db),
                        current_user: UserDB = Depends(get_current_user)):
     """Open a thread and post its first message.
 
-    A requester opens one for themselves and it lands unclaimed in the queue.
-    A technician opens one *for* a requester and owns it from the start,
-    since they're the one reaching out.
+    With no recipient it goes to the shared helpdesk queue, unclaimed, for
+    the first technician to answer — requesters only, since staff *are* the
+    helpdesk. Naming someone opens a private thread with them instead.
     """
     now = utc_now_iso()
+    target = (body.to or "").strip()
 
-    if _is_staff(current_user):
-        target = (body.requester or "").strip()
-        if not target:
+    if not target:
+        if _is_staff(current_user):
             raise HTTPException(
-                status_code=400, detail="Choose who you want to message")
+                status_code=400,
+                detail="Choose who you want to message",
+            )
+        # Reuse an open queue thread rather than stacking duplicates every
+        # time the widget is reopened.
+        convo = (db.query(ConversationDB)
+                   .filter(ConversationDB.requester == current_user.name)
+                   .filter(ConversationDB.kind == "helpdesk")
+                   .filter(ConversationDB.closed_at == "")
+                   .order_by(ConversationDB.updated_at.desc()).first())
+        if not convo:
+            convo = ConversationDB(
+                kind="helpdesk", requester=current_user.name, technician="",
+                subject=body.subject.strip()[:120],
+                created_at=now, updated_at=now, requester_read_at=now,
+            )
+    else:
+        if target == current_user.name:
+            raise HTTPException(status_code=400,
+                                detail="You can't message yourself")
         other = db.query(UserDB).filter(UserDB.name == target).first()
         if not other:
             raise HTTPException(status_code=404, detail="No such user")
-        if _is_staff(other):
-            raise HTTPException(
-                status_code=400,
-                detail="Chat threads are between the helpdesk and a requester",
+
+        # One open thread per pair, in whichever direction it was started.
+        pair = or_(
+            and_(ConversationDB.requester == current_user.name,
+                 ConversationDB.technician == other.name),
+            and_(ConversationDB.requester == other.name,
+                 ConversationDB.technician == current_user.name),
+        )
+        convo = (db.query(ConversationDB)
+                   .filter(ConversationDB.kind == "direct")
+                   .filter(pair)
+                   .filter(ConversationDB.closed_at == "")
+                   .order_by(ConversationDB.updated_at.desc()).first())
+        if not convo:
+            convo = ConversationDB(
+                kind="direct", requester=current_user.name,
+                technician=other.name, subject=body.subject.strip()[:120],
+                created_at=now, updated_at=now, requester_read_at=now,
             )
-        convo = ConversationDB(
-            requester=other.name, technician=current_user.name,
-            subject=body.subject.strip()[:120], created_at=now, updated_at=now,
-            technician_read_at=now,
-        )
-    else:
-        # Reuse an open thread rather than stacking duplicates in the queue
-        # every time the widget is reopened.
-        existing = (db.query(ConversationDB)
-                      .filter(ConversationDB.requester == current_user.name)
-                      .filter(ConversationDB.closed_at == "")
-                      .order_by(ConversationDB.updated_at.desc()).first())
-        convo = existing or ConversationDB(
-            requester=current_user.name, technician="",
-            subject=body.subject.strip()[:120], created_at=now, updated_at=now,
-            requester_read_at=now,
-        )
 
     db.add(convo)
     db.flush()
@@ -1278,6 +1361,7 @@ def start_conversation(body: ConversationStart, db: Session = Depends(get_db),
     db.add(MessageDB(conversation_id=convo.id, sender=current_user.name,
                      body=body.body, created_at=now))
     convo.updated_at = now
+    _set_read_mark(convo, current_user, now)
     db.commit()
     db.refresh(convo)
     return _decorate(db, convo, current_user)
@@ -1304,11 +1388,7 @@ def list_messages(conversation_id: int, after_id: int = Query(0, ge=0),
     rows = q.order_by(MessageDB.id).limit(500).all()
 
     # Opening a thread marks it read for this side.
-    now = utc_now_iso()
-    if _is_staff(current_user):
-        convo.technician_read_at = now
-    else:
-        convo.requester_read_at = now
+    _set_read_mark(convo, current_user, utc_now_iso())
     db.commit()
     return rows
 
@@ -1325,19 +1405,18 @@ def post_message(conversation_id: int, body: MessageIn,
 
     now = utc_now_iso()
 
-    # First staff reply claims the thread, so answering and claiming are the
-    # same action — nobody has to remember to press a button first.
-    if _is_staff(current_user) and not str(convo.technician or ""):
+    # First staff reply claims a queue thread, so answering and claiming are
+    # the same action. Direct threads already have both their people.
+    if (str(convo.kind or "helpdesk") == "helpdesk"
+            and _is_staff(current_user)
+            and not str(convo.technician or "")):
         convo.technician = current_user.name
 
     msg = MessageDB(conversation_id=convo.id, sender=current_user.name,
                     body=body.body, created_at=now)
     db.add(msg)
     convo.updated_at = now
-    if _is_staff(current_user):
-        convo.technician_read_at = now
-    else:
-        convo.requester_read_at = now
+    _set_read_mark(convo, current_user, now)
     db.commit()
     db.refresh(msg)
     return msg
@@ -1346,9 +1425,19 @@ def post_message(conversation_id: int, body: MessageIn,
 @app.post("/chat/conversations/{conversation_id}/close",
           response_model=ConversationOut)
 def close_conversation(conversation_id: int, db: Session = Depends(get_db),
-                       current_user: UserDB = Depends(require_staff)):
-    """End a thread. Staff only; the history stays readable."""
+                       current_user: UserDB = Depends(get_current_user)):
+    """End a thread. The history stays readable.
+
+    Staff close queue threads, which is helpdesk work. A direct thread can be
+    closed by either of its two people — it's theirs.
+    """
     convo = _get_conversation_or_404(db, conversation_id, current_user)
+    if str(convo.kind or "helpdesk") == "direct":
+        if not _is_participant(convo, current_user):
+            raise HTTPException(status_code=403, detail="Not your conversation")
+    elif not _is_staff(current_user):
+        raise HTTPException(
+            status_code=403, detail="Technician or admin access required")
     convo.closed_at = utc_now_iso()
     db.commit()
     db.refresh(convo)
@@ -1368,8 +1457,10 @@ def chat_poll(db: Session = Depends(get_db),
             .order_by(ConversationDB.updated_at.desc()).limit(100).all())
 
     conversations = [_decorate(db, c, current_user) for c in rows]
-    waiting = sum(1 for c in rows if not str(c.technician or "")) \
-        if _is_staff(current_user) else 0
+    waiting = sum(
+        1 for c in rows
+        if str(c.kind or "helpdesk") == "helpdesk" and not str(c.technician or "")
+    ) if _is_staff(current_user) else 0
 
     return {
         "unread": sum(c.unread for c in conversations),

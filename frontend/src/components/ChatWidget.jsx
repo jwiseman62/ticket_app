@@ -26,6 +26,11 @@ function useIsVisible() {
   return visible
 }
 
+/** "Both" is this app's admin role; nobody says "both" out loud. */
+function roleLabel(role) {
+  return role === 'Both' ? 'Admin' : role
+}
+
 export default function ChatWidget() {
   const { user } = useAuth()
   const toast    = useToast()
@@ -45,12 +50,20 @@ export default function ChatWidget() {
   const [sending,  setSending]  = useState(false)
   const [loading,  setLoading]  = useState(false)
 
+  // People picker
+  const [picking, setPicking] = useState(false)
+  const [people,  setPeople]  = useState([])
+  const [search,  setSearch]  = useState('')
+  // Set when starting a brand-new thread: null means "the helpdesk queue".
+  const [target,  setTarget]  = useState(undefined)
+
   const scrollRef = useRef(null)
   const inputRef  = useRef(null)
   // Highest message id seen, so polling asks only for what's new.
   const lastIdRef = useRef(0)
 
   const active = threads.find((t) => t.id === activeId) || null
+  const composing = target !== undefined
 
   // ── Badge / thread list ──
   const poll = useCallback(async () => {
@@ -68,8 +81,7 @@ export default function ChatWidget() {
   useEffect(() => {
     if (!visible) return undefined
     poll()
-    const ms = open ? POLL_OPEN : POLL_CLOSED
-    const timer = setInterval(poll, ms)
+    const timer = setInterval(poll, open ? POLL_OPEN : POLL_CLOSED)
     return () => clearInterval(timer)
   }, [poll, open, visible])
 
@@ -77,13 +89,11 @@ export default function ChatWidget() {
   const pullMessages = useCallback(async (conversationId, reset = false) => {
     if (!conversationId) return
     try {
-      const since = reset ? 0 : lastIdRef.current
-      const rows = await api.listMessages(conversationId, since)
-      if (reset) {
-        setMessages(rows)
-      } else if (rows.length) {
-        setMessages((prev) => [...prev, ...rows])
-      }
+      const rows = await api.listMessages(
+        conversationId, reset ? 0 : lastIdRef.current,
+      )
+      if (reset) setMessages(rows)
+      else if (rows.length) setMessages((prev) => [...prev, ...rows])
       if (rows.length) lastIdRef.current = rows[rows.length - 1].id
     } catch (err) {
       toast.error(err.message)
@@ -102,8 +112,19 @@ export default function ChatWidget() {
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, open])
 
+  // ── People picker ──
+  useEffect(() => {
+    if (!picking) return undefined
+    const timer = setTimeout(() => {
+      api.listChatPeople(search).then(setPeople).catch(() => {})
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [picking, search])
+
   async function openThread(id) {
     setActiveId(id)
+    setTarget(undefined)
+    setPicking(false)
     setLoading(true)
     lastIdRef.current = 0
     await pullMessages(id, true)
@@ -112,21 +133,24 @@ export default function ChatWidget() {
     inputRef.current?.focus()
   }
 
-  // A requester has at most one live thread, so opening the widget should
-  // drop them straight into it rather than showing a list of one.
-  async function handleOpen() {
-    setOpen(true)
-    await poll()
-  }
+  /** Start composing to someone — or to the queue when `to` is null. */
+  function composeTo(to) {
+    // An open thread with this person already exists? Go there instead of
+    // starting a second one the backend would only merge anyway.
+    const existing = threads.find(
+      (t) => !t.closed_at && (to === null ? t.kind === 'helpdesk' && !t.other
+                                          : t.other === to),
+    )
+    if (existing) { openThread(existing.id); return }
 
-  useEffect(() => {
-    if (!open || isStaff || activeId) return
-    const mine = threads.find((t) => !t.closed_at)
-    if (mine) openThread(mine.id)
-    // openThread is stable enough for this one-shot; re-running on every
-    // threads change would refetch the whole thread on each poll.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isStaff, activeId, threads])
+    setActiveId(null)
+    setMessages([])
+    lastIdRef.current = 0
+    setTarget(to)
+    setPicking(false)
+    setSearch('')
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
 
   async function send(e) {
     e.preventDefault()
@@ -139,9 +163,9 @@ export default function ChatWidget() {
         setMessages((prev) => [...prev, msg])
         lastIdRef.current = msg.id
       } else {
-        // First message from a requester opens the thread.
-        const convo = await api.startConversation({ body: text })
+        const convo = await api.startConversation({ to: target ?? '', body: text })
         setActiveId(convo.id)
+        setTarget(undefined)
         lastIdRef.current = 0
         await pullMessages(convo.id, true)
       }
@@ -160,9 +184,7 @@ export default function ChatWidget() {
     try {
       await api.closeConversation(activeId)
       toast.success('Conversation closed.')
-      setActiveId(null)
-      setMessages([])
-      poll()
+      backToList()
     } catch (err) {
       toast.error(err.message)
     }
@@ -171,6 +193,9 @@ export default function ChatWidget() {
   function backToList() {
     setActiveId(null)
     setMessages([])
+    setTarget(undefined)
+    setPicking(false)
+    setSearch('')
     lastIdRef.current = 0
     poll()
   }
@@ -183,6 +208,14 @@ export default function ChatWidget() {
     }
   }
 
+  /** What to call the other side of a thread in the list. */
+  function threadName(t) {
+    if (t.kind === 'helpdesk' && !t.other) {
+      return isStaff ? t.requester : 'Helpdesk'
+    }
+    return t.other || 'Helpdesk'
+  }
+
   const badge = isStaff ? unread + waiting : unread
 
   if (!user) return null
@@ -193,7 +226,7 @@ export default function ChatWidget() {
       <button
         type="button"
         className="chat-bubble"
-        onClick={handleOpen}
+        onClick={() => { setOpen(true); poll() }}
         aria-label={badge ? `Messages, ${badge} waiting` : 'Messages'}
       >
         <span aria-hidden="true">💬</span>
@@ -202,33 +235,39 @@ export default function ChatWidget() {
     )
   }
 
-  const showList = isStaff && !activeId
+  const inThread = Boolean(activeId) || composing
+  const headerName = composing
+    ? (target === null ? 'Helpdesk' : target)
+    : active ? threadName(active) : 'Messages'
 
   return (
     <section className="chat-panel" aria-label="Messages">
       <header className="chat-head">
-        {activeId && isStaff && (
+        {(inThread || picking) && (
           <button type="button" className="chat-icon-btn" onClick={backToList}
                   aria-label="Back to all conversations">←</button>
         )}
         <div className="chat-head-text">
-          <strong>
-            {showList ? 'Messages'
-              : active ? (isStaff ? active.requester : 'Helpdesk')
-              : 'Helpdesk'}
-          </strong>
-          {!showList && active && (
+          <strong>{picking ? 'New message' : headerName}</strong>
+          {!picking && inThread && active && (
             <span className="chat-head-sub">
-              {active.technician
-                ? (isStaff ? `with ${active.requester}` : `${active.technician} is helping`)
-                : 'Waiting for a technician'}
+              {active.kind === 'helpdesk' && !active.other
+                ? (isStaff ? 'Waiting to be picked up' : 'Waiting for a technician')
+                : roleLabel(active.other_role)}
             </span>
           )}
-          {showList && waiting > 0 && (
+          {!picking && composing && (
+            <span className="chat-head-sub">
+              {target === null
+                ? 'The first free technician will answer'
+                : 'New conversation'}
+            </span>
+          )}
+          {!picking && !inThread && waiting > 0 && (
             <span className="chat-head-sub">{waiting} waiting to be picked up</span>
           )}
         </div>
-        {activeId && isStaff && (
+        {activeId && (
           <button type="button" className="chat-icon-btn" onClick={handleClose}
                   title="Close this conversation">✓</button>
         )}
@@ -236,44 +275,87 @@ export default function ChatWidget() {
                 aria-label="Minimise messages">✕</button>
       </header>
 
-      {/* ── Thread list (staff only) ── */}
-      {showList ? (
+      {/* ── People picker ── */}
+      {picking ? (
         <div className="chat-body">
-          {threads.length === 0 ? (
-            <p className="chat-empty">No open conversations.</p>
+          <input
+            className="chat-search" type="search" autoFocus
+            placeholder="Search people…"
+            value={search} onChange={(e) => setSearch(e.target.value)}
+          />
+          {!isStaff && (
+            <button type="button" className="chat-person chat-person-helpdesk"
+                    onClick={() => composeTo(null)}>
+              <span className="chat-person-name">🛟 Helpdesk</span>
+              <span className="chat-person-role">
+                Whoever is free answers first
+              </span>
+            </button>
+          )}
+          {people.length === 0 ? (
+            <p className="chat-empty">No one matches that.</p>
           ) : (
-            <ul className="chat-list">
-              {threads.map((t) => (
-                <li key={t.id}>
-                  <button type="button" className="chat-list-item"
-                          onClick={() => openThread(t.id)}>
-                    <span className="chat-list-top">
-                      <strong>{t.requester}</strong>
-                      {!t.technician && <span className="chat-pill">New</span>}
-                      {t.unread > 0 && <span className="chat-count">{t.unread}</span>}
-                    </span>
-                    <span className="chat-list-preview">
-                      {t.last_sender === user.name && 'You: '}{t.last_message}
-                    </span>
-                    <span className="chat-list-time" title={fullTimestamp(t.updated_at)}>
-                      {smartTime(t.updated_at)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            people.map((p) => (
+              <button key={p.name} type="button" className="chat-person"
+                      onClick={() => composeTo(p.name)}>
+                <span className="chat-person-name">{p.name}</span>
+                <span className="chat-person-role">{roleLabel(p.role)}</span>
+              </button>
+            ))
           )}
         </div>
+      ) : !inThread ? (
+        /* ── Thread list ── */
+        <>
+          <div className="chat-body">
+            {threads.length === 0 ? (
+              <p className="chat-empty">
+                No conversations yet. Start one below.
+              </p>
+            ) : (
+              <ul className="chat-list">
+                {threads.map((t) => (
+                  <li key={t.id}>
+                    <button type="button" className="chat-list-item"
+                            onClick={() => openThread(t.id)}>
+                      <span className="chat-list-top">
+                        <strong>{threadName(t)}</strong>
+                        {t.kind === 'helpdesk' && !t.other && isStaff &&
+                          <span className="chat-pill">New</span>}
+                        {t.unread > 0 && <span className="chat-count">{t.unread}</span>}
+                      </span>
+                      <span className="chat-list-preview">
+                        {t.last_sender === user.name && 'You: '}{t.last_message}
+                      </span>
+                      <span className="chat-list-time" title={fullTimestamp(t.updated_at)}>
+                        {smartTime(t.updated_at)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="chat-newbar">
+            <button type="button" className="btn btn-primary btn-sm btn-block"
+                    onClick={() => { setPicking(true); setPeople([]) }}>
+              ✎ New message
+            </button>
+          </div>
+        </>
       ) : (
+        /* ── A conversation ── */
         <>
           <div className="chat-body" ref={scrollRef}>
             {loading ? (
               <p className="chat-empty">Loading…</p>
             ) : messages.length === 0 ? (
               <p className="chat-empty">
-                {isStaff
-                  ? 'No messages yet.'
-                  : 'Send a message and a technician will pick it up.'}
+                {composing && target === null
+                  ? 'Describe your problem and a technician will pick it up.'
+                  : composing
+                    ? `Say hello to ${target}.`
+                    : 'No messages yet.'}
               </p>
             ) : (
               messages.map((m) => (

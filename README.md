@@ -114,10 +114,24 @@ return the same message, so the endpoint can't be used to discover accounts.
 
 ### Live chat
 
-A bubble in the bottom-right corner of every signed-in page. A requester
-types and the thread lands in a queue; the first technician to reply owns it,
-so answering and claiming are one action rather than two. Technicians can
-also start a thread with a requester, and own it from the start.
+A bubble in the bottom-right corner of every signed-in page. Anyone can
+message anyone: a **New message** button opens a searchable list of people,
+with staff listed first because that's who a requester usually wants.
+
+Requesters also get **Helpdesk** pinned at the top of that list — a thread
+with no named recipient that lands in a shared queue, where the first
+technician to reply owns it. Answering and claiming are one action rather
+than two. Someone with a broken laptop shouldn't have to know who's on shift.
+
+**Who can see what.** Queue threads are visible to every technician — that's
+what makes a queue a queue, and handover is normal. Direct threads are
+private to their two people, admins included. Once anyone can message anyone,
+"staff see everything" would mean technicians reading each other's messages.
+
+Read markers are keyed by *position in the thread*, not by role. Keying them
+off role worked only while every thread was one requester and one technician;
+two technicians talking are both staff and would have shared a single marker,
+so each would have seen the other's reads as their own.
 
 **Polled, not socketed.** Render's free tier sleeps after 15 minutes of
 silence, which drops every open WebSocket and means reconnect handling plus a
@@ -507,10 +521,11 @@ All endpoints except `/auth/register` and `/auth/login` require a bearer token.
 | `POST` | `/auth/resend-code` | Send another code. Always reports success |
 | `GET` | `/chat/poll` | Badge counts and thread list in one request |
 | `GET` | `/chat/conversations` | Threads. Requesters see only their own |
-| `POST` | `/chat/conversations` | Open a thread. Staff must name the requester |
+| `GET` | `/chat/people` | Who you can message, staff first. `search` filters |
+| `POST` | `/chat/conversations` | Open a thread. `to` empty means the queue — requesters only |
 | `GET` | `/chat/conversations/{id}/messages` | `after_id` for incremental polling |
 | `POST` | `/chat/conversations/{id}/messages` | Send. A staff reply claims an unclaimed thread |
-| `POST` | `/chat/conversations/{id}/close` | Technician or admin |
+| `POST` | `/chat/conversations/{id}/close` | Staff close queue threads; either person closes a direct one |
 | `GET` | `/announcements/current` | The pinned notice, or null. Any signed-in user |
 | `GET` | `/announcements` | Pinned plus history, newest first |
 | `POST` | `/announcements` | Technician or admin. Retires the previous notice |

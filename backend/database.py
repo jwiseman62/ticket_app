@@ -102,6 +102,12 @@ _INDEXES = [
     ("ix_tickets_deleted_at", "tickets", "deleted_at"),
 ]
 
+# conversations predates direct messaging, when every thread was a requester
+# talking to the helpdesk queue.
+_CONVERSATION_COLUMNS = {
+    "kind": "VARCHAR DEFAULT 'helpdesk'",
+}
+
 _USER_COLUMNS = {
     "email":          "VARCHAR DEFAULT ''",
     "created_at":     "VARCHAR DEFAULT ''",
@@ -137,7 +143,8 @@ def migrate() -> None:
 
     plan: list[tuple[str, str, str]] = []
     for table, columns in (
-        ("tickets",     _TICKET_COLUMNS),
+        ("tickets",       _TICKET_COLUMNS),
+        ("conversations", _CONVERSATION_COLUMNS),
         ("users",       _USER_COLUMNS),
         ("attachments", _ATTACHMENT_COLUMNS),
     ):

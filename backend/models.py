@@ -150,8 +150,18 @@ class ConversationDB(Base):
     __tablename__ = "conversations"
 
     id:         Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    # "helpdesk" — opened by a requester, unclaimed, any technician may take
+    # it. "direct" — between two named people of any role.
+    kind:       Mapped[str] = mapped_column(String, default="helpdesk", index=True)
+
+    # These two hold the participants. The names date from when every thread
+    # was requester-to-helpdesk; in a direct thread `requester` is whoever
+    # opened it and `technician` is the other person, whatever their roles.
+    # Code reads them through _participants() rather than by name, so the
+    # misnomer stays in one place.
     requester:  Mapped[str] = mapped_column(String, index=True)
-    # Empty until a technician picks it up.
+    # Empty on a helpdesk thread until a technician picks it up.
     technician: Mapped[str] = mapped_column(String, default="", index=True)
     subject:    Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[str] = mapped_column(String, default="")
@@ -159,8 +169,9 @@ class ConversationDB(Base):
     updated_at: Mapped[str] = mapped_column(String, default="", index=True)
     closed_at:  Mapped[str] = mapped_column(String, default="", index=True)
 
-    # Read markers, one per side. Unread count is "messages from the other
-    # side newer than this", which needs no per-message read rows.
+    # Read markers, one per *position* rather than per role: two technicians
+    # talking are both staff, so keying these off role would give them a
+    # single shared marker and break both their unread counts.
     requester_read_at:  Mapped[str] = mapped_column(String, default="")
     technician_read_at: Mapped[str] = mapped_column(String, default="")
 
@@ -384,10 +395,14 @@ class MessageOut(BaseModel):
 
 
 class ConversationStart(BaseModel):
-    """Opening a thread. Staff must name the requester; requesters can't."""
+    """Opening a thread.
+
+    `to` empty means the shared helpdesk queue, which only a requester can
+    post to. Anyone can name a person instead.
+    """
     body: str
     subject: str = ""
-    requester: str = ""
+    to: str = ""
 
     @field_validator("body")
     @classmethod
@@ -402,9 +417,14 @@ class ConversationStart(BaseModel):
 
 class ConversationOut(BaseModel):
     id: int
+    kind: str = "helpdesk"
     requester: str
     technician: str = ""
     subject: str = ""
+    # Who the viewer is talking to, worked out per request — "Helpdesk" when
+    # a queue thread hasn't been picked up yet.
+    other: str = ""
+    other_role: str = ""
     created_at: str = ""
     updated_at: str = ""
     closed_at: str = ""
@@ -415,8 +435,8 @@ class ConversationOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
-    @field_validator("technician", "subject", "created_at", "updated_at",
-                     "closed_at", mode="before")
+    @field_validator("kind", "technician", "subject", "created_at",
+                     "updated_at", "closed_at", mode="before")
     @classmethod
     def _no_nulls(cls, v):
         return "" if v is None else v

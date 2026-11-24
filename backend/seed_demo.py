@@ -422,26 +422,36 @@ def _make_ref(used: set) -> str:
             return ref
 
 
-# Chat threads: one answered, one still waiting in the queue, so a
-# technician opening the demo sees both states.
-# (requester, technician, minutes_ago, [(sender, body), ...])
+# Chat threads. One answered queue thread, one still waiting to be picked
+# up, and one direct message between two technicians — so the widget shows
+# every state it supports.
+# (kind, opener, other, minutes_ago, [(sender, body), ...])
 CONVERSATIONS = [
     (
-        "casey.nguyen", "sam.patel", 42,
+        "helpdesk", "tom.alvarez", "sarah.chen", 42,
         [
-            ("casey.nguyen", "Morning — the shared drive is asking me for a "
-                             "password that it never used to."),
-            ("sam.patel", "That'll be the credential cache after the server "
-                          "move. Can you try disconnecting the drive and "
-                          "reconnecting it?"),
-            ("casey.nguyen", "That did it, thank you!"),
+            ("tom.alvarez", "Morning — the shared drive is asking me for a "
+                            "password that it never used to."),
+            ("sarah.chen", "That'll be the credential cache after the server "
+                           "move. Can you try disconnecting the drive and "
+                           "reconnecting it?"),
+            ("tom.alvarez", "That did it, thank you!"),
         ],
     ),
     (
-        "jordan.lee", "", 4,
+        "helpdesk", "priya.n", "", 4,
         [
-            ("jordan.lee", "Hi, is anyone around? My headset isn't being "
-                           "picked up in Teams and I have a call at 11."),
+            ("priya.n", "Hi, is anyone around? My headset isn't being picked "
+                        "up in Teams and I have a call at 11."),
+        ],
+    ),
+    (
+        "direct", "marcus.webb", "sarah.chen", 18,
+        [
+            ("marcus.webb", "Are you still on the projector ticket in the "
+                            "conference room? I'm nearby if you want a hand."),
+            ("sarah.chen", "Yes please — the cable tests fine so I think it's "
+                           "the input board."),
         ],
     ),
 ]
@@ -602,15 +612,15 @@ def seed(db) -> dict:
     db.commit()
 
     # ── Chat ──
-    for requester, technician, minutes_ago, lines in CONVERSATIONS:
+    for kind, opener, other, minutes_ago, lines in CONVERSATIONS:
         start = now - timedelta(minutes=minutes_ago)
         convo = ConversationDB(
-            requester=requester, technician=technician, subject="",
+            kind=kind, requester=opener, technician=other, subject="",
             created_at=_iso(start), updated_at=_iso(start),
-            # The requester has read their own thread; an unclaimed one has
-            # never been opened by staff, so it shows as unread in the queue.
+            # The opener has read their own thread. An unclaimed queue thread
+            # has never been opened by staff, so it shows unread in the queue.
             requester_read_at=_iso(now),
-            technician_read_at=_iso(now) if technician else "",
+            technician_read_at=_iso(now) if other else "",
         )
         db.add(convo)
         db.flush()
