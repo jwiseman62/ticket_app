@@ -43,7 +43,7 @@ export default function Landing() {
       {/* Hero */}
       <section className="hero">
         <div className="hero-inner">
-          <div className="hero-badge">IT Help Desk</div>
+          <div className="hero-badge">Tech Help</div>
 
           <h1 className="hero-title">
             Manage IT tickets <br />
@@ -145,7 +145,7 @@ export default function Landing() {
       {/* CTA banner */}
       <section className="cta-section">
         <div className="cta-inner">
-          <h2 className="cta-title">Ready to get organised?</h2>
+          <h2 className="cta-title">Ready to get organized?</h2>
           <p className="cta-body">Create your account in under a minute.</p>
           <div className="hero-ctas">
             {user ? (
