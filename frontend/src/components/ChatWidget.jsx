@@ -11,7 +11,7 @@ import { smartTime, fullTimestamp } from '../utils/dates.js'
  * perceptible gain.
  */
 const POLL_OPEN   = 3000    // a thread is on screen
-const POLL_CLOSED = 15000   // just keeping the badge honest
+const POLL_CLOSED = 5000    // collapsed: how fast a new message shows up
 
 /** Ask the browser whether anyone is actually looking. */
 function useIsVisible() {
@@ -51,6 +51,11 @@ export default function ChatWidget() {
   const [loading,  setLoading]  = useState(false)
 
   // People picker
+  // Set briefly when the unread count GOES UP, to animate the bubble. The
+  // count alone is easy to miss: it changes silently in the corner of the
+  // screen, so what's needed is a change you can see from elsewhere on the page.
+  const [pulse, setPulse] = useState(false)
+
   const [picking, setPicking] = useState(false)
   const [people,  setPeople]  = useState([])
   const [search,  setSearch]  = useState('')
@@ -61,6 +66,10 @@ export default function ChatWidget() {
   const inputRef  = useRef(null)
   // Highest message id seen, so polling asks only for what's new.
   const lastIdRef = useRef(0)
+  // Previous badge count. null until the first poll answers, so arriving with
+  // unread messages doesn't fire the animation — a pulse on every page load
+  // is exactly how a signal becomes wallpaper.
+  const prevBadgeRef = useRef(null)
 
   const active = threads.find((t) => t.id === activeId) || null
   const composing = target !== undefined
@@ -218,6 +227,17 @@ export default function ChatWidget() {
 
   const badge = isStaff ? unread + waiting : unread
 
+  useEffect(() => {
+    const prev = prevBadgeRef.current
+    prevBadgeRef.current = badge
+    // Nothing to announce on the first answer, or while the panel is open —
+    // if it's open they are already looking at it.
+    if (prev === null || open || badge <= prev) return undefined
+    setPulse(true)
+    const timer = setTimeout(() => setPulse(false), 900)
+    return () => clearTimeout(timer)
+  }, [badge, open])
+
   if (!user) return null
 
   // ── Collapsed ──
@@ -225,7 +245,7 @@ export default function ChatWidget() {
     return (
       <button
         type="button"
-        className="chat-bubble"
+        className={`chat-bubble${pulse ? ' chat-bubble-alert' : ''}`}
         onClick={() => { setOpen(true); poll() }}
         aria-label={badge ? `Messages, ${badge} waiting` : 'Messages'}
       >

@@ -5396,3 +5396,37 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .gate-actions { flex-direction: column-reverse; }
   .gate-actions .btn { width: 100%; }
 }
+
+/* ── New-message pulse on the chat bubble ─────────────────────────────────
+   Applied for 900ms when the unread count rises. Two animations at once:
+   the bubble pops, and a red ring expands out of it. The ring is a
+   box-shadow rather than a pseudo-element so it can't land behind the
+   bubble's own background or fight its stacking context. */
+@keyframes chat-bubble-pop {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.14); }
+  60%  { transform: scale(.97); }
+  100% { transform: scale(1); }
+}
+
+@keyframes chat-bubble-ring {
+  0% {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .25),
+                0 0 0 0 rgba(239, 68, 68, .55);
+  }
+  100% {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .25),
+                0 0 0 18px rgba(239, 68, 68, 0);
+  }
+}
+
+/* The red is written out rather than taken from --danger because a ring needs
+   it at partial alpha, and a hex custom property can't be given one. */
+.chat-bubble-alert {
+  animation: chat-bubble-pop .9s ease-out, chat-bubble-ring .9s ease-out;
+}
+
+/* The count still changes for anyone who'd rather things held still. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-bubble-alert { animation: none; }
+}
