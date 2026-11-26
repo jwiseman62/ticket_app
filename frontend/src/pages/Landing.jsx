@@ -167,6 +167,7 @@ export default function Landing() {
           <div className="footer-links">
             <Link to="/login">Sign In</Link>
             <Link to="/register">Register</Link>
+            <Link to="/terms">Terms</Link>
           </div>
           <div className="footer-contact">
             <span className="footer-by">Built by Jefferson Wiseman</span>

@@ -11,6 +11,7 @@ export default function Register() {
   })
   const [error,   setError]   = useState('')
   const [loading, setLoading] = useState(false)
+  const [agreed,  setAgreed]  = useState(false)
 
   const set = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }))
 
@@ -135,7 +136,25 @@ export default function Register() {
             )}
           </div>
 
-          <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
+          <label className="form-consent">
+            <input
+              type="checkbox" required
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+            />
+            <span>
+              I agree to the{' '}
+              {/* Opens in a new tab so a half-filled form isn't lost. */}
+              <Link to="/terms" target="_blank" rel="noopener noreferrer">
+                Terms of Service
+              </Link>
+              , and I understand this is a demonstration project whose data is
+              reset regularly.
+            </span>
+          </label>
+
+          <button type="submit" className="btn btn-primary btn-block"
+                  disabled={loading || !agreed}>
             {loading ? 'Creating…' : 'Create Account'}
           </button>
         </form>

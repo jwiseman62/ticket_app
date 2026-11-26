@@ -19,7 +19,7 @@ import random
 import sys
 from datetime import datetime, timedelta, timezone
 
-from auth import hash_password
+from auth import TERMS_VERSION, hash_password
 from database import Base, SessionLocal, engine, migrate
 from models import (
     AnnouncementDB, ArticleDB, AttachmentDB, CommentDB, ConversationDB,
@@ -487,6 +487,7 @@ def seed(db) -> dict:
             password_hash=hash_password(DEMO_PASSWORD),
             created_at=_iso(now - timedelta(days=45)),
             requested_role="", failed_logins=0, locked_until="",
+            terms_version=TERMS_VERSION, terms_accepted_at=_iso(now - timedelta(days=45)),
         ))
         counts["users"] += 1
 
@@ -496,6 +497,7 @@ def seed(db) -> dict:
         password_hash=hash_password(DEMO_PASSWORD),
         created_at=_iso(now - timedelta(days=1)),
         requested_role="Technician", failed_logins=0, locked_until="",
+        terms_version=TERMS_VERSION, terms_accepted_at=_iso(now - timedelta(days=1)),
     ))
     counts["users"] += 1
     db.commit()

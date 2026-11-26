@@ -6,7 +6,9 @@ import { ConfirmProvider } from './context/ConfirmContext.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import Navbar    from './components/Navbar.jsx'
 import ChatWidget from './components/ChatWidget.jsx'
+import TermsGate  from './components/TermsGate.jsx'
 import Landing   from './pages/Landing.jsx'
+import Terms     from './pages/Terms.jsx'
 import Login     from './pages/Login.jsx'
 import Register  from './pages/Register.jsx'
 import Home      from './pages/Home.jsx'
@@ -75,11 +77,35 @@ function GlobalChat() {
   return user ? <ChatWidget /> : null
 }
 
+/**
+ * Stands between a signed-in account and the application.
+ *
+ * When the terms have changed, nothing else renders — not the routes, not
+ * the chat widget — so there is no corner of the app reachable without
+ * accepting first. Signed-out visitors are unaffected: they get the normal
+ * routes, including the public /terms page.
+ */
+function Session() {
+  const { user, termsRequired } = useAuth()
+
+  if (user && termsRequired) return <TermsGate />
+
+  return (
+    <>
+      <AppRoutes />
+      {/* Sibling of the routes, so navigating doesn't remount it. */}
+      <GlobalChat />
+    </>
+  )
+}
+
 function AppRoutes() {
   return (
     <Routes>
       {/* Public */}
       <Route path="/"          element={<PublicLayout><Landing /></PublicLayout>} />
+      {/* Public on purpose: terms have to be readable before you sign up. */}
+      <Route path="/terms"     element={<PublicLayout><Terms /></PublicLayout>} />
 
       {/* Auth */}
       <Route path="/login"     element={<AuthLayout><Login /></AuthLayout>} />
@@ -113,9 +139,7 @@ export default function App() {
           <AuthProvider>
             <BrowserRouter>
               <ErrorBoundary>
-                <AppRoutes />
-                {/* Sibling of the routes, so navigating doesn't remount it. */}
-                <GlobalChat />
+                <Session />
               </ErrorBoundary>
             </BrowserRouter>
           </AuthProvider>

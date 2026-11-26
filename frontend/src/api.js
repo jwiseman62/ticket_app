@@ -167,6 +167,15 @@ export const updateUserEmail = (id, email) =>
 export const updateUserRole = (id, role) =>
   request(`/users/${id}/role`, { method: 'PUT', body: JSON.stringify({ role }) })
 
+// ── Terms of service ──────────────────────────────────────────────── //
+
+/* Both of these stay reachable while the acceptance gate is up; every other
+   endpoint returns 403 until the current version is on the account. */
+
+export const termsStatus = () => request('/terms/status')
+
+export const acceptTerms = () => request('/terms/accept', { method: 'POST' })
+
 // ── Users ─────────────────────────────────────────────────────────── //
 
 export const getMe = () => request('/auth/me')

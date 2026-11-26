@@ -4,6 +4,7 @@ import hashlib
 import os
 import re
 import secrets
+import time
 import shutil
 import uuid
 from datetime import datetime, timedelta
@@ -20,10 +21,10 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from auth import (
-    ACCESS_TOKEN_EXPIRE_MINUTES, LOCKOUT_MINUTES, clear_failed_logins,
-    create_access_token, get_current_user, hash_password, is_locked_out,
-    register_failed_login, require_admin, require_staff, utc_now, utc_now_iso,
-    verify_password,
+    ACCESS_TOKEN_EXPIRE_MINUTES, LOCKOUT_MINUTES, TERMS_VERSION,
+    clear_failed_logins, create_access_token, get_current_user, hash_password,
+    is_locked_out, register_failed_login, require_admin, require_staff,
+    terms_outstanding, utc_now, utc_now_iso, verify_password,
 )
 from database import (Base, SessionLocal, describe_backend, engine, get_db,
                       migrate)
@@ -81,6 +82,11 @@ CLOSED_GRACE_DAYS = int(os.environ.get("CLOSED_GRACE_DAYS", "1"))
 
 # Deleted tickets are recoverable for this long, then purged for real.
 TRASH_RETENTION_DAYS = int(os.environ.get("TRASH_RETENTION_DAYS", "30"))
+
+# How long a *closed* chat thread is kept before it and its messages are
+# removed for good. Open threads are never touched, however old. Set to 0 to
+# keep everything indefinitely.
+CHAT_RETENTION_DAYS = int(os.environ.get("CHAT_RETENTION_DAYS", "30"))
 
 # ── Email verification ──
 # Off by default. The public demo runs with it off so the "Try it instantly"
@@ -428,7 +434,11 @@ def _mark_signed_in(db: Session, user: UserDB) -> dict:
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     return {"access_token": token, "token_type": "bearer",
-            "role": user.role, "name": user.name}
+            "role": user.role, "name": user.name,
+            # Saves the client a round trip: it knows to show the acceptance
+            # screen the moment the token lands.
+            "terms_required": terms_outstanding(user),
+            "terms_version": TERMS_VERSION}
 
 
 # ═══════════════════════════ AUTH ═══════════════════════════ #
@@ -461,6 +471,10 @@ def register(body: UserCreate, db: Session = Depends(get_db)):
         created_at=utc_now_iso(),
         # Recorded, not granted — an admin still has to issue a code.
         requested_role="" if is_first_user else body.requested_role,
+        # The signup form requires ticking the box, so the account starts
+        # current and isn't stopped by the gate on its very first login.
+        terms_version=TERMS_VERSION,
+        terms_accepted_at=utc_now_iso(),
     )
     db.add(user)
     db.commit()
@@ -601,6 +615,41 @@ def resend_verification_code(body: ResendCodeRequest, db: Session = Depends(get_
 @app.get("/auth/me", response_model=UserOut)
 def get_me(current_user: UserDB = Depends(get_current_user)):
     return current_user
+
+
+# ═══════════════════════════ TERMS ═══════════════════════════ #
+
+@app.get("/terms/status")
+def terms_status(current_user: UserDB = Depends(get_current_user)):
+    """What this account owes. Exempt from the gate, so it stays reachable
+    while the gate is up — otherwise the client could never find out why it
+    was being refused."""
+    return {
+        "current_version": TERMS_VERSION,
+        "accepted_version": str(current_user.terms_version or ""),
+        "accepted_at": str(current_user.terms_accepted_at or ""),
+        "acceptance_required": terms_outstanding(current_user),
+    }
+
+
+@app.post("/terms/accept")
+def accept_terms(current_user: UserDB = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """Record acceptance of the version that is current right now.
+
+    The server decides which version was accepted, not the client. Taking a
+    version from the request body would let anyone accept a version that
+    doesn't exist yet and skip the next update too.
+    """
+    current_user.terms_version = TERMS_VERSION
+    current_user.terms_accepted_at = utc_now_iso()
+    db.commit()
+    return {
+        "current_version": TERMS_VERSION,
+        "accepted_version": TERMS_VERSION,
+        "accepted_at": current_user.terms_accepted_at,
+        "acceptance_required": False,
+    }
 
 
 # ═══════════════════════════ USERS ═══════════════════════════ #
@@ -1277,6 +1326,66 @@ def list_conversations(include_closed: bool = Query(False),
     return [_decorate(db, c, current_user) for c in rows]
 
 
+# Purging runs off the back of /chat/poll, which every open widget calls on a
+# timer. Doing the work on each call would mean a delete query every few
+# seconds per user, so it is throttled to once an hour per process. A module
+# global is enough: the free tier runs a single instance, and a restart only
+# means the next poll does the sweep.
+_last_chat_purge = 0.0
+_CHAT_PURGE_INTERVAL = 3600  # seconds
+
+
+def purge_old_chats(db: Session) -> int:
+    """Delete closed threads past the retention window, with their messages.
+
+    Only closed ones. A thread someone is still using is not stale no matter
+    how long ago it started, and silently deleting a live conversation would
+    be far worse than keeping it.
+    """
+    if CHAT_RETENTION_DAYS <= 0:
+        return 0
+
+    cutoff = _days_ago_iso(CHAT_RETENTION_DAYS)
+    stale = (db.query(ConversationDB)
+               .filter(ConversationDB.closed_at != "")
+               .filter(ConversationDB.closed_at < cutoff)
+               .all())
+    if not stale:
+        return 0
+
+    ids = [c.id for c in stale]
+    (db.query(MessageDB)
+       .filter(MessageDB.conversation_id.in_(ids))
+       .delete(synchronize_session=False))
+    for convo in stale:
+        db.delete(convo)
+    db.commit()
+    print(f"[chat] purged {len(stale)} closed conversation(s) past "
+          f"{CHAT_RETENTION_DAYS} days")
+    return len(stale)
+
+
+def _maybe_purge_chats(db: Session) -> None:
+    global _last_chat_purge
+    now = time.time()
+    if now - _last_chat_purge < _CHAT_PURGE_INTERVAL:
+        return
+    _last_chat_purge = now
+    try:
+        purge_old_chats(db)
+    except Exception as exc:
+        # Housekeeping must never break the widget's polling.
+        print(f"[chat] purge failed: {exc}")
+
+
+@app.post("/chat/purge")
+def purge_chats_now(db: Session = Depends(get_db),
+                    _: UserDB = Depends(require_admin)):
+    """Run the sweep on demand. Admin only."""
+    removed = purge_old_chats(db)
+    return {"ok": True, "purged": removed, "retention_days": CHAT_RETENTION_DAYS}
+
+
 @app.get("/chat/people")
 def list_chat_people(search: str = Query(""), db: Session = Depends(get_db),
                      current_user: UserDB = Depends(get_current_user)):
@@ -1452,6 +1561,8 @@ def chat_poll(db: Session = Depends(get_db),
     Returns just enough to drive the badge and the thread list, so an idle
     widget costs a single query rather than one per conversation.
     """
+    _maybe_purge_chats(db)
+
     rows = (_visible_conversations(db, current_user)
             .filter(ConversationDB.closed_at == "")
             .order_by(ConversationDB.updated_at.desc()).limit(100).all())

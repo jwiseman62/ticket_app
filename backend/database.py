@@ -119,6 +119,8 @@ _USER_COLUMNS = {
     "verify_expires_at": "VARCHAR DEFAULT ''",
     "verify_attempts":   "INTEGER DEFAULT 0",
     "last_login":        "VARCHAR DEFAULT ''",
+    "terms_version":     "VARCHAR DEFAULT ''",
+    "terms_accepted_at": "VARCHAR DEFAULT ''",
 }
 
 _ATTACHMENT_COLUMNS = {

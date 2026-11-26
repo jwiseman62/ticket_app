@@ -140,6 +140,47 @@ open is imperceptible in a helpdesk conversation, and each poll doubles as
 the keep-alive a socket would need a heartbeat for. Polling drops to 15
 seconds when the panel is closed and stops entirely when the tab is hidden.
 
+### System design diagrams
+
+Seven diagrams — data model, deployment, three sequence diagrams, and the
+ticket state machine — live in `docs/diagrams/`, as Mermaid sources with
+rendered SVGs beside them. See `docs/diagrams/README.md` for what each one
+covers and how to regenerate them.
+
+### Terms of service
+
+The terms live in `frontend/src/pages/TermsContent.jsx` and are shown in two
+places: the public `/terms` page, and a full-screen acceptance notice that
+replaces the application when someone has not accepted the current version.
+
+Acceptance is enforced in `get_current_user`, the single dependency every
+authenticated route resolves through. While a user owes acceptance, all of
+them return `403` with `{"code": "terms_acceptance_required"}` except the
+three the notice itself needs: `/auth/me`, `/terms/status` and
+`/terms/accept`. That is what stops the notice being a front-end suggestion.
+
+It applies to every role, administrators included. New registrations are
+recorded as having accepted, since the signup form requires it.
+
+**Updating the terms takes two edits, and both matter:**
+
+1. `LAST_UPDATED` in `frontend/src/pages/TermsContent.jsx` — the date
+   readers see.
+2. `TERMS_VERSION` in `backend/auth.py`, or the environment variable of the
+   same name — what actually decides who is asked again.
+
+Change the words without bumping `TERMS_VERSION` and nobody is asked. Bump
+`TERMS_VERSION` without changing the date and people are asked to re-accept
+terms that look identical. The two are kept apart on purpose: a typo fix
+should not log the whole user base out of the application, so forcing
+re-acceptance stays a deliberate act.
+
+**Retention.** Messages are kept while a conversation is open, however old
+it gets — a thread someone is still using isn't stale. Once a conversation is
+closed, it and its messages are deleted after `CHAT_RETENTION_DAYS` (30). The
+sweep runs off the back of `/chat/poll`, throttled to once an hour per
+process, so it doesn't fire a delete query every few seconds per user.
+
 Messages page by id rather than timestamp. Timestamps here have one-second
 granularity, so two messages sent in the same second are indistinguishable —
 a timestamp cursor would repeat one or skip one.
@@ -365,6 +406,8 @@ ticket_app/
         ├── utils/
         │   └── dates.js         UTC → local time formatting
         ├── pages/
+        │   ├── Terms.jsx        Public terms page
+        │   ├── TermsContent.jsx The terms themselves, shared with the gate
         │   ├── Landing.jsx      Public marketing page
         │   ├── Login.jsx
         │   ├── Register.jsx
@@ -430,6 +473,8 @@ value is optional for local development.
 | `REQUIRE_EMAIL_VERIFICATION` | Gate requesters behind a 6-digit code. Defaults to false. |
 | `VERIFICATION_IDLE_DAYS` | Days idle before a verified requester re-verifies. Defaults to 30. |
 | `CLOSED_GRACE_DAYS` | How long a closed ticket stays on the board and in the dashboard counters before moving to the archive. Defaults to 1 (24 hours). |
+| `TERMS_VERSION` | The terms revision people must have accepted. Bump it to make everyone accept again. Defaults to the date the terms were last written. |
+| `CHAT_RETENTION_DAYS` | How long a closed chat thread is kept before deletion. 0 keeps everything. Defaults to 30. |
 | `TRASH_RETENTION_DAYS` | How long a deleted ticket is recoverable. Defaults to 30. |
 | `DEMO_MODE` | Enables the demo reset endpoint. |
 | `DEMO_RESET_TOKEN` | Shared secret for `POST /admin/reset-demo`. |
@@ -525,6 +570,9 @@ All endpoints except `/auth/register` and `/auth/login` require a bearer token.
 | `POST` | `/chat/conversations` | Open a thread. `to` empty means the queue — requesters only |
 | `GET` | `/chat/conversations/{id}/messages` | `after_id` for incremental polling |
 | `POST` | `/chat/conversations/{id}/messages` | Send. A staff reply claims an unclaimed thread |
+| `GET`  | `/terms/status` | What this account has accepted, and whether it owes the current version |
+| `POST` | `/terms/accept` | Record acceptance of the version that is current server-side |
+| `POST` | `/chat/purge` | Admin only. Runs the retention sweep on demand |
 | `POST` | `/chat/conversations/{id}/close` | Staff close queue threads; either person closes a direct one |
 | `GET` | `/announcements/current` | The pinned notice, or null. Any signed-in user |
 | `GET` | `/announcements` | Pinned plus history, newest first |

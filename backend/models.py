@@ -84,6 +84,14 @@ class UserDB(Base):
     # Drives the "hasn't signed in for 30+ days" re-check.
     last_login:        Mapped[str] = mapped_column(String, default="")
 
+    # ── Terms of service ──
+    # The TERMS_VERSION this account has accepted. Empty means never, which
+    # is also what every pre-existing row migrates to — so bumping the
+    # version and adding the column have the same effect: everyone is asked
+    # again on their next request.
+    terms_version:     Mapped[str] = mapped_column(String, default="")
+    terms_accepted_at: Mapped[str] = mapped_column(String, default="")
+
 
 class TicketDB(Base):
     __tablename__ = "tickets"

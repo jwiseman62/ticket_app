@@ -5,7 +5,7 @@ import stat
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -53,6 +53,31 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 hours
 
 MAX_FAILED_LOGINS = 5
 LOCKOUT_MINUTES = 15
+
+# ── Terms of service ────────────────────────────────────────────── #
+
+# Bump this whenever the terms change in a way people should see. Every
+# account whose stored terms_version differs is asked to accept again on
+# their next request — which includes accounts that have never accepted,
+# since those store an empty string.
+#
+# Keep it in step with LAST_UPDATED in frontend/src/pages/TermsContent.jsx.
+# The page shows the date; this decides who gets stopped.
+TERMS_VERSION = os.environ.get("TERMS_VERSION", "2026-11-25")
+
+# Endpoints that must keep working while someone is being asked to accept,
+# or they could never get out of it: who am I, what do I owe, and accepting.
+# Everything else is closed until the current version is on the account.
+TERMS_EXEMPT_PATHS = frozenset({
+    "/auth/me",
+    "/terms/status",
+    "/terms/accept",
+})
+
+
+def terms_outstanding(user: UserDB) -> bool:
+    return str(user.terms_version or "") != TERMS_VERSION
+
 
 # ── Password hashing ────────────────────────────────────────────── #
 
@@ -130,6 +155,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 
 def get_current_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> UserDB:
@@ -149,6 +175,22 @@ def get_current_user(
     user = db.query(UserDB).filter(UserDB.name == username).first()
     if not user:
         raise exc
+
+    # Every authenticated route in the application resolves through this
+    # dependency, so one check here closes all of them at once rather than
+    # relying on 40-odd routes each remembering to ask. The frontend shows
+    # the acceptance screen before it gets this far; this is the backstop
+    # that makes the screen more than a suggestion.
+    if request.url.path not in TERMS_EXEMPT_PATHS and terms_outstanding(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "terms_acceptance_required",
+                "version": TERMS_VERSION,
+                "message": "The terms of service have been updated. "
+                           "Please review and accept them to continue.",
+            },
+        )
     return user
 
 
