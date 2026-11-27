@@ -699,3 +699,335 @@ class ArticleOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ══════════════════════════ Careers ══════════════════════════ #
+#
+# Two tables for one application, on purpose.
+#
+# ApplicationDB holds what a hiring manager is allowed to read. The voluntary
+# EEO self-identification goes in ApplicationEEODB instead, keyed by the same
+# id but never joined into the reviewer's view. Real employers are expected to
+# keep self-identification apart from the hiring decision, and the honest way
+# to express "apart" in a schema is a different table that the review endpoint
+# simply does not query — not a column the UI politely scrolls past.
+#
+# Things deliberately NOT collected here, and why:
+#   SSN            — post-offer only (I-9, background check). On a public demo
+#                    it is a liability with no upside.
+#   Date of birth  — age-discrimination exposure; "18 or over" does the job.
+#   Criminal record— Illinois JOQAA bars asking at the application stage.
+#   Disability     — ADA bars pre-offer disability inquiries. What is asked
+#                    instead is whether they can perform the essential
+#                    functions, and whether they need accommodation to
+#                    interview.
+
+
+class JobPostingDB(Base):
+    __tablename__ = "job_postings"
+
+    id:              Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    slug:            Mapped[str] = mapped_column(String, unique=True, index=True)
+    title:           Mapped[str] = mapped_column(String)
+    # The role this posting hires INTO, in the app's own vocabulary, so a hire
+    # can issue the right invite code without anyone mapping it by hand.
+    grants_role:     Mapped[str] = mapped_column(String, default="Technician")
+    level:           Mapped[str] = mapped_column(String, default="")
+    location:        Mapped[str] = mapped_column(String, default="")
+    employment_type: Mapped[str] = mapped_column(String, default="Full-time")
+    salary_range:    Mapped[str] = mapped_column(String, default="")
+    summary:         Mapped[str] = mapped_column(Text, default="")
+    description:     Mapped[str] = mapped_column(Text, default="")
+    responsibilities: Mapped[str] = mapped_column(Text, default="")
+    requirements:    Mapped[str] = mapped_column(Text, default="")
+    created_by:      Mapped[str] = mapped_column(String, default="")
+    created_at:      Mapped[str] = mapped_column(String, default="")
+    updated_at:      Mapped[str] = mapped_column(String, default="")
+    # Empty means the posting is open. Same derived-state habit as the rest of
+    # the app: no bool that could disagree with the timestamp beside it.
+    closed_at:       Mapped[str] = mapped_column(String, default="")
+
+
+class ApplicationDB(Base):
+    __tablename__ = "applications"
+
+    id:         Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    ref:        Mapped[str] = mapped_column(String, default="", index=True)
+    job_id:     Mapped[int] = mapped_column(Integer, index=True)
+    job_title:  Mapped[str] = mapped_column(String, default="")
+
+    # ── Contact ──
+    first_name:   Mapped[str] = mapped_column(String, default="")
+    middle_initial: Mapped[str] = mapped_column(String, default="")
+    last_name:    Mapped[str] = mapped_column(String, default="")
+    address:      Mapped[str] = mapped_column(String, default="")
+    city:         Mapped[str] = mapped_column(String, default="")
+    state:        Mapped[str] = mapped_column(String, default="")
+    postal_code:  Mapped[str] = mapped_column(String, default="")
+    phone_mobile: Mapped[str] = mapped_column(String, default="")
+    phone_home:   Mapped[str] = mapped_column(String, default="")
+    email:        Mapped[str] = mapped_column(String, default="", index=True)
+
+    # Replaces date of birth: the only thing an employer needs pre-offer.
+    is_adult:     Mapped[int] = mapped_column(Integer, default=0)
+    work_authorized: Mapped[int] = mapped_column(Integer, default=0)
+
+    # ── Emergency contact ──
+    ec_name:     Mapped[str] = mapped_column(String, default="")
+    ec_relation: Mapped[str] = mapped_column(String, default="")
+    ec_phone:    Mapped[str] = mapped_column(String, default="")
+    ec_email:    Mapped[str] = mapped_column(String, default="")
+
+    # ── Background ──
+    heard_about:   Mapped[str] = mapped_column(String, default="")
+    about_you:     Mapped[str] = mapped_column(Text, default="")
+    it_experience: Mapped[str] = mapped_column(Text, default="")
+
+    # ── Education ──
+    highschool:        Mapped[str] = mapped_column(String, default="")
+    highschool_year:   Mapped[str] = mapped_column(String, default="")
+    college:           Mapped[str] = mapped_column(String, default="")
+    college_major:     Mapped[str] = mapped_column(String, default="")
+    college_year:      Mapped[str] = mapped_column(String, default="")
+    still_attending:   Mapped[int] = mapped_column(Integer, default=0)
+
+    # ── Employment history ──
+    no_prior_employment: Mapped[int] = mapped_column(Integer, default=0)
+    prev_employer:   Mapped[str] = mapped_column(String, default="")
+    prev_title:      Mapped[str] = mapped_column(String, default="")
+    prev_from:       Mapped[str] = mapped_column(String, default="")
+    prev_to:         Mapped[str] = mapped_column(String, default="")
+    prev_reason:     Mapped[str] = mapped_column(Text, default="")
+
+    # ── ADA-safe job-fitness questions (permitted pre-offer) ──
+    can_perform_functions: Mapped[int] = mapped_column(Integer, default=0)
+    needs_interview_accommodation: Mapped[str] = mapped_column(Text, default="")
+
+    # ── Agreement ──
+    signature:     Mapped[str] = mapped_column(String, default="")
+    signed_at:     Mapped[str] = mapped_column(String, default="")
+    certified:     Mapped[int] = mapped_column(Integer, default=0)
+
+    # ── Review ──
+    status:        Mapped[str] = mapped_column(String, default="New", index=True)
+    reviewer_notes: Mapped[str] = mapped_column(Text, default="")
+    reviewed_by:   Mapped[str] = mapped_column(String, default="")
+    reviewed_at:   Mapped[str] = mapped_column(String, default="")
+    submitted_at:  Mapped[str] = mapped_column(String, default="", index=True)
+    hired_invite_code: Mapped[str] = mapped_column(String, default="")
+
+
+class ApplicationEEODB(Base):
+    """Voluntary self-identification, stored apart from the application.
+
+    Never returned by the review endpoints. It exists so the demo can show the
+    aggregate reporting such data is actually for, without putting it in front
+    of whoever decides who gets hired.
+    """
+    __tablename__ = "application_eeo"
+
+    id:             Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(Integer, index=True)
+    gender:         Mapped[str] = mapped_column(String, default="Decline to self-identify")
+    race:           Mapped[str] = mapped_column(String, default="Decline to self-identify")
+    veteran_status: Mapped[str] = mapped_column(String, default="Decline to self-identify")
+    submitted_at:   Mapped[str] = mapped_column(String, default="")
+
+
+# ── Careers schemas ──
+#
+# Note what ApplicationOut does NOT contain: there is no eeo field. The
+# reviewer's view cannot leak self-identification data because the shape it
+# is serialised into has nowhere to put it.
+
+
+class JobPostingIn(BaseModel):
+    title: str
+    grants_role: str = "Technician"
+    level: str = ""
+    location: str = ""
+    employment_type: str = "Full-time"
+    salary_range: str = ""
+    summary: str = ""
+    description: str = ""
+    responsibilities: str = ""
+    requirements: str = ""
+
+    @field_validator("title")
+    @classmethod
+    def _title_required(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("A job posting needs a title.")
+        return v.strip()
+
+    @field_validator("grants_role")
+    @classmethod
+    def _role_known(cls, v: str) -> str:
+        if v not in ("Technician", "Both"):
+            raise ValueError("A posting can only hire into Technician or Both.")
+        return v
+
+
+class JobPostingOut(BaseModel):
+    id: int
+    slug: str
+    title: str
+    grants_role: str
+    level: str
+    location: str
+    employment_type: str
+    salary_range: str
+    summary: str
+    description: str
+    responsibilities: str
+    requirements: str
+    created_at: str
+    updated_at: str
+    closed_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class ApplicationEEOIn(BaseModel):
+    """Every field defaults to declining. Answering is optional by design."""
+    gender: str = "Decline to self-identify"
+    race: str = "Decline to self-identify"
+    veteran_status: str = "Decline to self-identify"
+
+
+class ApplicationIn(BaseModel):
+    job_slug: str
+
+    first_name: str
+    middle_initial: str = ""
+    last_name: str
+    address: str = ""
+    city: str = ""
+    state: str = ""
+    postal_code: str = ""
+    phone_mobile: str = ""
+    phone_home: str = ""
+    email: str
+    confirm_email: str
+
+    is_adult: bool = False
+    work_authorized: bool = False
+
+    ec_name: str = ""
+    ec_relation: str = ""
+    ec_phone: str = ""
+    ec_email: str = ""
+
+    heard_about: str = ""
+    about_you: str = ""
+    it_experience: str = ""
+
+    highschool: str = ""
+    highschool_year: str = ""
+    college: str = ""
+    college_major: str = ""
+    college_year: str = ""
+    still_attending: bool = False
+
+    no_prior_employment: bool = False
+    prev_employer: str = ""
+    prev_title: str = ""
+    prev_from: str = ""
+    prev_to: str = ""
+    prev_reason: str = ""
+
+    can_perform_functions: bool = False
+    needs_interview_accommodation: str = ""
+
+    signature: str
+    certified: bool = False
+
+    eeo: ApplicationEEOIn = ApplicationEEOIn()
+
+    @field_validator("first_name", "last_name", "signature")
+    @classmethod
+    def _required(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("This field is required.")
+        return v.strip()
+
+    @field_validator("email")
+    @classmethod
+    def _email_shape(cls, v: str) -> str:
+        v = v.strip()
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("That doesn't look like an email address.")
+        return v
+
+
+class ApplicationSummary(BaseModel):
+    """The list row. Deliberately thin — a reviewer scanning a list has no
+    business loading everyone's home address."""
+    id: int
+    ref: str
+    job_id: int
+    job_title: str
+    first_name: str
+    last_name: str
+    email: str
+    status: str
+    submitted_at: str
+    reviewed_by: str
+
+    model_config = {"from_attributes": True}
+
+
+class ApplicationOut(BaseModel):
+    id: int
+    ref: str
+    job_id: int
+    job_title: str
+    first_name: str
+    middle_initial: str
+    last_name: str
+    address: str
+    city: str
+    state: str
+    postal_code: str
+    phone_mobile: str
+    phone_home: str
+    email: str
+    is_adult: int
+    work_authorized: int
+    ec_name: str
+    ec_relation: str
+    ec_phone: str
+    ec_email: str
+    heard_about: str
+    about_you: str
+    it_experience: str
+    highschool: str
+    highschool_year: str
+    college: str
+    college_major: str
+    college_year: str
+    still_attending: int
+    no_prior_employment: int
+    prev_employer: str
+    prev_title: str
+    prev_from: str
+    prev_to: str
+    prev_reason: str
+    can_perform_functions: int
+    needs_interview_accommodation: str
+    signature: str
+    signed_at: str
+    certified: int
+    status: str
+    reviewer_notes: str
+    reviewed_by: str
+    reviewed_at: str
+    submitted_at: str
+    hired_invite_code: str
+
+    model_config = {"from_attributes": True}
+
+
+class ApplicationReviewIn(BaseModel):
+    status: Optional[str] = None
+    reviewer_notes: Optional[str] = None

@@ -100,6 +100,9 @@ _INDEXES = [
     ("ix_tickets_ref",        "tickets", "ref"),
     ("ix_tickets_closed_at",  "tickets", "closed_at"),
     ("ix_tickets_deleted_at", "tickets", "deleted_at"),
+    ("ix_applications_status",       "applications", "status"),
+    ("ix_applications_submitted_at", "applications", "submitted_at"),
+    ("ix_applications_job_id",       "applications", "job_id"),
 ]
 
 # conversations predates direct messaging, when every thread was a requester

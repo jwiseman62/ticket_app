@@ -9,6 +9,9 @@ import ChatWidget from './components/ChatWidget.jsx'
 import TermsGate  from './components/TermsGate.jsx'
 import Landing   from './pages/Landing.jsx'
 import Terms     from './pages/Terms.jsx'
+import Careers   from './pages/Careers.jsx'
+import JobDetail from './pages/JobDetail.jsx'
+import JobApply  from './pages/JobApply.jsx'
 import Login     from './pages/Login.jsx'
 import Register  from './pages/Register.jsx'
 import Home      from './pages/Home.jsx'
@@ -106,6 +109,10 @@ function AppRoutes() {
       <Route path="/"          element={<PublicLayout><Landing /></PublicLayout>} />
       {/* Public on purpose: terms have to be readable before you sign up. */}
       <Route path="/terms"     element={<PublicLayout><Terms /></PublicLayout>} />
+      {/* Public on purpose: applicants have no account yet. */}
+      <Route path="/careers"   element={<PublicLayout><Careers /></PublicLayout>} />
+      <Route path="/careers/:slug" element={<PublicLayout><JobDetail /></PublicLayout>} />
+      <Route path="/careers/:slug/apply" element={<PublicLayout><JobApply /></PublicLayout>} />
 
       {/* Auth */}
       <Route path="/login"     element={<AuthLayout><Login /></AuthLayout>} />

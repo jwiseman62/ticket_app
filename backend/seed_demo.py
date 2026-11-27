@@ -25,6 +25,7 @@ from models import (
     AnnouncementDB, ArticleDB, AttachmentDB, CommentDB, ConversationDB,
     InviteCodeDB, MessageDB,
     TicketDB, UserDB,
+    JobPostingDB, ApplicationDB, ApplicationEEODB,
 )
 from seed_articles import SEED_ARTICLES
 
@@ -414,6 +415,100 @@ ANNOUNCEMENTS = [
 _REF_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
 
 
+# ── Job postings ──
+#
+# grants_role is the app's own role vocabulary, not a job title: three of
+# these hire into "Technician", and the manager role hires into "Both",
+# which is what this application calls an administrator. Hiring reads this
+# field to decide what the invite code grants, so a new posting cannot drift
+# out of step with the access it is advertising.
+
+JOB_POSTINGS = [
+    (
+        "technician-i", "Technician I", "Technician", "Level 1",
+        "$42,000 – $52,000",
+        "First line of support. You answer the tickets everyone sees first and "
+        "resolve most of them before anyone else has to look.",
+        "Technician I is where most of our team starts. You own the front of "
+        "the queue: password resets, account lockouts, printer and peripheral "
+        "faults, software installs, and the steady stream of \"it was working "
+        "yesterday\" tickets. You are not expected to know everything on day "
+        "one — you are expected to be methodical, to write down what you "
+        "tried, and to hand over cleanly when something needs Level 2.",
+        "Pick up and triage incoming tickets\n"
+        "Resolve password, access and peripheral issues end to end\n"
+        "Image and deploy laptops and desktops\n"
+        "Keep ticket notes good enough that the next person needs no handover call\n"
+        "Escalate with a clear summary of what you have already ruled out",
+        "Comfortable with Windows and macOS troubleshooting\n"
+        "Clear written English — most of this job is writing\n"
+        "Patience with non-technical colleagues having a bad morning\n"
+        "No formal experience required; CompTIA A+ or equivalent is welcome",
+    ),
+    (
+        "technician-ii", "Technician II", "Technician", "Level 2",
+        "$55,000 – $70,000",
+        "Second line. The tickets that arrive at your desk have already "
+        "defeated someone competent.",
+        "Technician II handles what Level 1 escalates and owns the systems "
+        "behind it. Expect networking faults, Active Directory and identity "
+        "problems, endpoint management, and the recurring issues nobody has "
+        "had time to fix properly. A good part of this role is noticing that "
+        "forty tickets share one cause.",
+        "Resolve escalations from Level 1 within agreed response times\n"
+        "Administer identity, email and endpoint management platforms\n"
+        "Diagnose network faults across wired, wireless and VPN\n"
+        "Write the knowledge base articles that stop a ticket recurring\n"
+        "Mentor Level 1 technicians — in person and in ticket notes",
+        "Two or more years in a support role, or one year plus strong evidence\n"
+        "Working knowledge of DNS, DHCP, VLANs and VPNs\n"
+        "Hands-on with Active Directory or a cloud identity provider\n"
+        "Scripting in PowerShell, Bash or Python is an advantage",
+    ),
+    (
+        "technician-iii", "Technician III", "Technician", "Level 3",
+        "$75,000 – $95,000",
+        "Third line and systems engineering. You fix the causes, not the "
+        "tickets.",
+        "Technician III is the escalation point of last resort and the person "
+        "who makes the next hundred tickets unnecessary. You design and "
+        "maintain the infrastructure the other levels work on, lead incident "
+        "response when something significant breaks, and are expected to push "
+        "back on work that treats symptoms.",
+        "Own final escalation for incidents affecting multiple users\n"
+        "Design, build and document core infrastructure and automation\n"
+        "Lead incident response and write the postmortem afterwards\n"
+        "Review and improve how Levels 1 and 2 work, not just what they fix\n"
+        "Hold the on-call rota with the rest of the senior team",
+        "Five or more years in IT operations or systems engineering\n"
+        "Depth in at least one of: networking, identity, virtualisation, cloud\n"
+        "Real automation experience — infrastructure as code, not just scripts\n"
+        "A track record of reducing ticket volume, with the numbers to show it",
+    ),
+    (
+        "technician-manager", "Technician Manager", "Both", "Management",
+        "$95,000 – $125,000",
+        "Run the desk. Own the queue, the rota and the careers of the people "
+        "working them.",
+        "The Technician Manager is accountable for the service the whole team "
+        "delivers. You set priorities, hold the service levels, and decide "
+        "what the team stops doing. This is a people-first management role: "
+        "roughly a third of it is hiring, one-to-ones and development, and we "
+        "would rather you were excellent at that than the best engineer in the "
+        "room. This role carries administrator access to this application.",
+        "Own service levels, queue health and the on-call rota\n"
+        "Hire, onboard and develop technicians across all three levels\n"
+        "Hold regular one-to-ones and run honest performance conversations\n"
+        "Report on volume, resolution times and recurring causes to leadership\n"
+        "Administer this platform: accounts, roles, invite codes and announcements",
+        "Three or more years leading a support or operations team\n"
+        "A credible technical background — enough to tell good work from plausible work\n"
+        "Experience owning service levels and reporting against them\n"
+        "Evidence of developing people into their next role",
+    ),
+]
+
+
 def _make_ref(used: set) -> str:
     while True:
         ref = "TK-" + "".join(random.choice(_REF_ALPHABET) for _ in range(4))
@@ -468,7 +563,8 @@ def _now() -> datetime:
 def wipe(db) -> None:
     """Remove all demo content. Order matters for foreign keys."""
     for model in (CommentDB, AttachmentDB, TicketDB, InviteCodeDB, UserDB,
-                  ArticleDB, AnnouncementDB, MessageDB, ConversationDB):
+                  ArticleDB, AnnouncementDB, MessageDB, ConversationDB,
+                  ApplicationEEODB, ApplicationDB, JobPostingDB):
         db.query(model).delete()
     db.commit()
 
@@ -654,6 +750,22 @@ def seed(db) -> dict:
             ],
         ))
         counts["deleted"] += 1
+
+    db.commit()
+
+    # ── Job postings ──
+    for slug, title, grants, level, salary, summary, desc, resp, reqs in JOB_POSTINGS:
+        db.add(JobPostingDB(
+            slug=slug, title=title, grants_role=grants, level=level,
+            location="Hybrid — Chicago, IL", employment_type="Full-time",
+            salary_range=salary, summary=summary, description=desc,
+            responsibilities=resp, requirements=reqs,
+            created_by="demo.admin",
+            created_at=_iso(now - timedelta(days=21)),
+            updated_at=_iso(now - timedelta(days=21)),
+            closed_at="",
+        ))
+        counts["jobs"] = counts.get("jobs", 0) + 1
 
     db.commit()
     return counts

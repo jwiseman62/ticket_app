@@ -63,7 +63,7 @@ LOCKOUT_MINUTES = 15
 #
 # Keep it in step with LAST_UPDATED in frontend/src/pages/TermsContent.jsx.
 # The page shows the date; this decides who gets stopped.
-TERMS_VERSION = os.environ.get("TERMS_VERSION", "2026-11-25")
+TERMS_VERSION = os.environ.get("TERMS_VERSION", "2026-11-27")
 
 # Endpoints that must keep working while someone is being asked to accept,
 # or they could never get out of it: who am I, what do I owe, and accepting.

@@ -41,6 +41,9 @@ from models import (
     MessageDB, MessageIn, MessageOut,
     ResendCodeRequest, VerifyRequest,
     UserCreate, UserDB, UserEmailUpdate, UserOut, UserPasswordReset, UserRoleUpdate,
+    ApplicationDB, ApplicationEEODB, ApplicationIn, ApplicationOut,
+    ApplicationReviewIn, ApplicationSummary,
+    JobPostingDB, JobPostingIn, JobPostingOut,
 )
 from seed_articles import SEED_ARTICLES
 
@@ -2246,3 +2249,312 @@ with SessionLocal() as _db:
     _backfilled = backfill_ticket_refs(_db)
     if _backfilled:
         print(f"  backfilled {_backfilled} ticket reference(s)")
+
+
+# ═══════════════════════════ CAREERS ═══════════════════════════ #
+#
+# The public half of this is genuinely public: an applicant has no account
+# yet, so GET /jobs and POST /applications take no token. That makes
+# POST /applications the only unauthenticated write in the application, so
+# it is capped and its input is bounded rather than trusted.
+#
+# The review half is staff-only, and hiring is admin-only. Hiring does not
+# create an account: it issues an invite code for the posting's role, which
+# the new hire redeems after registering normally. That reuses the path that
+# already exists instead of growing a second way to become a technician.
+
+APPLICATION_STATUSES = ("New", "Reviewing", "Interview", "Offer", "Hired", "Rejected")
+
+# One applicant, one open application per posting. Stops a stuck submit
+# button turning into forty rows.
+MAX_OPEN_APPLICATIONS_PER_EMAIL = 3
+
+APPLICATION_REF_PREFIX = "AP-"
+
+
+def generate_application_ref(db: Session, attempts: int = 12) -> str:
+    for _ in range(attempts):
+        candidate = APPLICATION_REF_PREFIX + "".join(
+            secrets.choice(REF_ALPHABET) for _ in range(REF_LENGTH))
+        exists = db.query(ApplicationDB).filter(ApplicationDB.ref == candidate).first()
+        if not exists:
+            return candidate
+    raise HTTPException(status_code=500, detail="Could not allocate a reference.")
+
+
+def slugify(text_value: str) -> str:
+    out = "".join(c.lower() if c.isalnum() else "-" for c in text_value)
+    while "--" in out:
+        out = out.replace("--", "-")
+    return out.strip("-")[:60] or "role"
+
+
+def unique_slug(db: Session, title: str) -> str:
+    base = slugify(title)
+    slug, n = base, 2
+    while db.query(JobPostingDB).filter(JobPostingDB.slug == slug).first():
+        slug, n = f"{base}-{n}", n + 1
+    return slug
+
+
+# ── Public ──
+
+@app.get("/jobs", response_model=List[JobPostingOut])
+def list_open_jobs(db: Session = Depends(get_db)):
+    """Open postings. No authentication: this is a careers page."""
+    return (db.query(JobPostingDB)
+              .filter(JobPostingDB.closed_at == "")
+              .order_by(JobPostingDB.id).all())
+
+
+@app.get("/jobs/{slug}", response_model=JobPostingOut)
+def get_job(slug: str, db: Session = Depends(get_db)):
+    job = db.query(JobPostingDB).filter(JobPostingDB.slug == slug).first()
+    if not job or job.closed_at:
+        # 404 rather than 403 for a closed posting: a closed role is simply
+        # not there any more as far as the public is concerned.
+        raise HTTPException(status_code=404, detail="That role isn't open.")
+    return job
+
+
+@app.post("/applications", status_code=201)
+def submit_application(body: ApplicationIn, db: Session = Depends(get_db)):
+    job = db.query(JobPostingDB).filter(JobPostingDB.slug == body.job_slug).first()
+    if not job or job.closed_at:
+        raise HTTPException(status_code=404, detail="That role isn't open.")
+
+    if body.email.strip().lower() != body.confirm_email.strip().lower():
+        raise HTTPException(status_code=400, detail="The two email addresses don't match.")
+    if not body.is_adult:
+        raise HTTPException(status_code=400,
+                            detail="Applicants must confirm they are 18 or over.")
+    if not body.certified:
+        raise HTTPException(status_code=400,
+                            detail="Please confirm the information is accurate before submitting.")
+
+    open_count = (db.query(ApplicationDB)
+                    .filter(ApplicationDB.email == body.email.strip())
+                    .filter(ApplicationDB.status.notin_(("Hired", "Rejected")))
+                    .count())
+    if open_count >= MAX_OPEN_APPLICATIONS_PER_EMAIL:
+        raise HTTPException(
+            status_code=429,
+            detail="You already have applications in progress. "
+                   "Please wait to hear back before applying again.")
+
+    now = utc_now_iso()
+    app_row = ApplicationDB(
+        ref=generate_application_ref(db),
+        job_id=job.id, job_title=job.title,
+        first_name=body.first_name, middle_initial=body.middle_initial[:2],
+        last_name=body.last_name,
+        address=body.address, city=body.city, state=body.state,
+        postal_code=body.postal_code,
+        phone_mobile=body.phone_mobile, phone_home=body.phone_home,
+        email=body.email.strip(),
+        is_adult=int(body.is_adult), work_authorized=int(body.work_authorized),
+        ec_name=body.ec_name, ec_relation=body.ec_relation,
+        ec_phone=body.ec_phone, ec_email=body.ec_email,
+        heard_about=body.heard_about, about_you=body.about_you,
+        it_experience=body.it_experience,
+        highschool=body.highschool, highschool_year=body.highschool_year,
+        college=body.college, college_major=body.college_major,
+        college_year=body.college_year, still_attending=int(body.still_attending),
+        no_prior_employment=int(body.no_prior_employment),
+        prev_employer=body.prev_employer, prev_title=body.prev_title,
+        prev_from=body.prev_from, prev_to=body.prev_to, prev_reason=body.prev_reason,
+        can_perform_functions=int(body.can_perform_functions),
+        needs_interview_accommodation=body.needs_interview_accommodation,
+        signature=body.signature, signed_at=now, certified=int(body.certified),
+        status="New", submitted_at=now,
+    )
+    db.add(app_row)
+    db.flush()
+
+    # Written separately and never joined back into the reviewer's view.
+    db.add(ApplicationEEODB(
+        application_id=app_row.id,
+        gender=body.eeo.gender, race=body.eeo.race,
+        veteran_status=body.eeo.veteran_status,
+        submitted_at=now,
+    ))
+    db.commit()
+
+    # send_bulk gives each recipient their own message and swallows its own
+    # failures on a background thread, so there is nothing to catch here and
+    # a mail outage cannot cost us a stored application.
+    send_bulk(
+        f"We received your application — {job.title}",
+        f"Thanks {app_row.first_name},\n\n"
+        f"Your application for {job.title} has been received. "
+        f"Your reference is {app_row.ref}.\n\n"
+        f"This is a demonstration application and no real hiring takes place.",
+        [app_row.email],
+    )
+    # Separately, let the staff know one arrived.
+    send_notification(
+        f"New application — {job.title} ({app_row.ref})",
+        f"{app_row.first_name} {app_row.last_name} applied for {job.title}.",
+    )
+
+    return {"ref": app_row.ref, "job_title": job.title}
+
+
+# ── Review (staff) ──
+
+@app.get("/applications", response_model=List[ApplicationSummary])
+def list_applications(status: str = Query(""),
+                      db: Session = Depends(get_db),
+                      current_user: UserDB = Depends(require_staff)):
+    q = db.query(ApplicationDB)
+    if status:
+        q = q.filter(ApplicationDB.status == status)
+    return q.order_by(ApplicationDB.submitted_at.desc()).limit(200).all()
+
+
+@app.get("/applications/{application_id}", response_model=ApplicationOut)
+def get_application(application_id: int,
+                    db: Session = Depends(get_db),
+                    current_user: UserDB = Depends(require_staff)):
+    row = db.query(ApplicationDB).filter(ApplicationDB.id == application_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    return row
+
+
+@app.patch("/applications/{application_id}", response_model=ApplicationOut)
+def review_application(application_id: int, body: ApplicationReviewIn,
+                       db: Session = Depends(get_db),
+                       current_user: UserDB = Depends(require_staff)):
+    row = db.query(ApplicationDB).filter(ApplicationDB.id == application_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    if body.status is not None:
+        if body.status not in APPLICATION_STATUSES:
+            raise HTTPException(status_code=400,
+                                detail=f"Status must be one of {', '.join(APPLICATION_STATUSES)}.")
+        if body.status == "Hired":
+            raise HTTPException(
+                status_code=400,
+                detail="Use the hire action — it issues the invite code that "
+                       "actually grants the role.")
+        row.status = body.status
+    if body.reviewer_notes is not None:
+        row.reviewer_notes = body.reviewer_notes
+    row.reviewed_by = current_user.name
+    row.reviewed_at = utc_now_iso()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.post("/applications/{application_id}/hire")
+def hire_applicant(application_id: int,
+                   db: Session = Depends(get_db),
+                   current_user: UserDB = Depends(require_admin)):
+    """Mark hired and issue the invite code that grants the role.
+
+    No account is created here. The applicant registers themselves with the
+    email and password of their choosing, then redeems this code — the same
+    two steps any other technician goes through. Creating an account on their
+    behalf would mean inventing a password and emailing it, which is worse in
+    every way.
+    """
+    row = db.query(ApplicationDB).filter(ApplicationDB.id == application_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    if row.hired_invite_code:
+        raise HTTPException(status_code=409,
+                            detail=f"Already hired — invite code {row.hired_invite_code}.")
+
+    job = db.query(JobPostingDB).filter(JobPostingDB.id == row.job_id).first()
+    grants = job.grants_role if job else "Technician"
+
+    # Same retry-on-collision shape as create_invite uses.
+    code = ""
+    for _ in range(10):
+        candidate = _generate_code()
+        if not db.query(InviteCodeDB).filter(InviteCodeDB.code == candidate).first():
+            code = candidate
+            break
+    if not code:
+        raise HTTPException(status_code=500, detail="Could not generate a unique code")
+    now = utc_now_iso()
+    db.add(InviteCodeDB(
+        code=code, role=grants,
+        note=f"Hired for {row.job_title} ({row.ref})",
+        created_by=current_user.name, created_at=now,
+        expires_at=(utc_now() + timedelta(days=14)).isoformat(timespec="seconds"),
+        max_uses=1, uses=0, revoked=0,
+        target_user="", last_used_by="", last_used_at="",
+    ))
+    row.status = "Hired"
+    row.hired_invite_code = code
+    row.reviewed_by = current_user.name
+    row.reviewed_at = now
+    db.commit()
+
+    send_bulk(
+        f"Your offer — {row.job_title}",
+        f"Congratulations {row.first_name},\n\n"
+        f"Register an account at the sign-up page using this email address, "
+        f"then enter invite code {code} on the Redeem page to activate your "
+        f"{grants} access. The code expires in 14 days.\n\n"
+        f"This is a demonstration application and no real hiring takes place.",
+        [row.email],
+    )
+
+    return {"status": "Hired", "invite_code": code, "role": grants,
+            "expires_in_days": 14}
+
+
+# ── Postings (admin) ──
+
+@app.get("/admin/jobs", response_model=List[JobPostingOut])
+def list_all_jobs(db: Session = Depends(get_db),
+                  current_user: UserDB = Depends(require_admin)):
+    return db.query(JobPostingDB).order_by(JobPostingDB.id).all()
+
+
+@app.post("/admin/jobs", response_model=JobPostingOut, status_code=201)
+def create_job(body: JobPostingIn, db: Session = Depends(get_db),
+               current_user: UserDB = Depends(require_admin)):
+    now = utc_now_iso()
+    job = JobPostingDB(
+        slug=unique_slug(db, body.title), title=body.title,
+        grants_role=body.grants_role, level=body.level, location=body.location,
+        employment_type=body.employment_type, salary_range=body.salary_range,
+        summary=body.summary, description=body.description,
+        responsibilities=body.responsibilities, requirements=body.requirements,
+        created_by=current_user.name, created_at=now, updated_at=now, closed_at="",
+    )
+    db.add(job); db.commit(); db.refresh(job)
+    return job
+
+
+@app.patch("/admin/jobs/{job_id}", response_model=JobPostingOut)
+def update_job(job_id: int, body: JobPostingIn, db: Session = Depends(get_db),
+               current_user: UserDB = Depends(require_admin)):
+    job = db.query(JobPostingDB).filter(JobPostingDB.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Posting not found.")
+    for field in ("title", "grants_role", "level", "location", "employment_type",
+                  "salary_range", "summary", "description", "responsibilities",
+                  "requirements"):
+        setattr(job, field, getattr(body, field))
+    job.updated_at = utc_now_iso()
+    db.commit(); db.refresh(job)
+    return job
+
+
+@app.post("/admin/jobs/{job_id}/toggle", response_model=JobPostingOut)
+def toggle_job(job_id: int, db: Session = Depends(get_db),
+               current_user: UserDB = Depends(require_admin)):
+    """Close an open posting, or reopen a closed one."""
+    job = db.query(JobPostingDB).filter(JobPostingDB.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Posting not found.")
+    job.closed_at = "" if job.closed_at else utc_now_iso()
+    job.updated_at = utc_now_iso()
+    db.commit(); db.refresh(job)
+    return job

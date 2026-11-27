@@ -21,7 +21,7 @@
  * words here, change the date here, and bump that — all three, or people
  * will read a new date and never be asked, or be asked and see an old one.
  */
-export const LAST_UPDATED = '25 November 2026'
+export const LAST_UPDATED = '27 November 2026'
 
 export const CONTACT_URL = 'https://www.linkedin.com/in/jefferson-wiseman-718332155'
 
@@ -110,6 +110,20 @@ export default function TermsContent() {
           state and who changed them, kept as each ticket's history, and the
           date you accepted these terms.
         </li>
+        <li>
+          <strong>Job applications</strong> — if you apply through the careers
+          page, everything you enter on the application form. No account is
+          needed to apply, so this is the one thing here you can submit
+          without registering. The form deliberately does not ask for a Social
+          Security number, a date of birth, criminal history or medical
+          information.
+        </li>
+        <li>
+          <strong>Voluntary self-identification</strong> — if you choose to
+          answer the optional equal-opportunity questions, those answers are
+          stored separately from your application and are not shown to anyone
+          reviewing it. Every one of them defaults to declining.
+        </li>
       </ul>
       <p>
         There is no advertising, no analytics, and no third-party tracking
@@ -131,6 +145,11 @@ export default function TermsContent() {
           <strong>Chat messages</strong> — kept while a conversation is
           open. Once a conversation is closed, it and its messages are
           deleted 30 days later.
+        </li>
+        <li>
+          <strong>Job applications</strong> — kept until the next scheduled
+          reset, like everything else here. Nothing submitted through the
+          careers page is retained beyond it.
         </li>
         <li>
           <strong>Everything</strong> — removed entirely at each scheduled

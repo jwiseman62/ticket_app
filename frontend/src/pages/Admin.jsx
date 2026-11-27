@@ -4,10 +4,12 @@ import { useAuth } from '../context/AuthContext.jsx'
 import * as api from '../api.js'
 import UserManagement from '../components/UserManagement.jsx'
 import InviteManager  from '../components/InviteManager.jsx'
+import ApplicationReview from '../components/ApplicationReview.jsx'
 
 const TABS = [
   { id: 'users',   label: 'Users',        icon: '👥' },
   { id: 'invites', label: 'Access Codes', icon: '🎟' },
+  { id: 'hiring',  label: 'Applications',  icon: '📋' },
 ]
 
 export default function Admin() {
@@ -79,6 +81,7 @@ export default function Admin() {
 
       {tab === 'users'   && <UserManagement currentUser={user} />}
       {tab === 'invites' && <InviteManager />}
+      {tab === 'hiring'  && <ApplicationReview />}
     </div>
   )
 }

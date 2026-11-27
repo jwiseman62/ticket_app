@@ -147,6 +147,40 @@ ticket state machine — live in `docs/diagrams/`, as Mermaid sources with
 rendered SVGs beside them. See `docs/diagrams/README.md` for what each one
 covers and how to regenerate them.
 
+### Careers and hiring
+
+A public careers board at `/careers`, a page per posting, and an application
+form. None of it needs an account — an applicant doesn't have one yet, which
+makes `POST /applications` the only unauthenticated write in the application.
+It is capped at three open applications per email address and every field is
+length-bounded.
+
+Hiring does **not** create an account. `POST /applications/{id}/hire` issues a
+single-use invite code for the role the posting advertises (`grants_role` on
+the posting, so the code can't drift from what was advertised) and emails it.
+The new hire registers themselves and redeems it — the same path every other
+technician takes. Creating an account for them would mean inventing a password
+and emailing it.
+
+**What the form deliberately does not ask, and why.** These are not oversights;
+putting any of them back should be a decision:
+
+| Not collected | Why |
+|---|---|
+| Social Security number | Post-offer only, for the I-9 and background check. On a public demo it would put a real number in a database the shared admin login can read. |
+| Date of birth | Age-discrimination exposure with no pre-offer purpose. "18 or over" answers the real question. |
+| Criminal history | Illinois' Job Opportunities for Qualified Applicants Act bars asking at the application stage. |
+| Disability | The ADA bars pre-offer disability inquiries. The permitted questions — can you perform the essential functions, and do you need accommodation to interview — are asked instead. |
+
+**EEO data is segregated structurally, not visually.** Voluntary
+self-identification goes to `application_eeo`, a different table, written at
+submission and never joined back. `ApplicationOut` — the schema the review
+endpoints serialise into — has no field for it, so the reviewer's view cannot
+leak it even by mistake. Every self-identification question defaults to
+declining.
+
+None of this is legal advice and none of it has been reviewed by a lawyer.
+
 ### Terms of service
 
 The terms live in `frontend/src/pages/TermsContent.jsx` and are shown in two
@@ -572,6 +606,13 @@ All endpoints except `/auth/register` and `/auth/login` require a bearer token.
 | `POST` | `/chat/conversations/{id}/messages` | Send. A staff reply claims an unclaimed thread |
 | `GET`  | `/terms/status` | What this account has accepted, and whether it owes the current version |
 | `POST` | `/terms/accept` | Record acceptance of the version that is current server-side |
+| `GET`  | `/jobs` | Open postings. Public |
+| `GET`  | `/jobs/{slug}` | One posting. Public |
+| `POST` | `/applications` | Submit an application. Public, rate-capped |
+| `GET`  | `/applications` | Review list. Staff |
+| `PATCH`| `/applications/{id}` | Status and reviewer notes. Staff |
+| `POST` | `/applications/{id}/hire` | Mark hired, issue the invite code. Admin |
+| `GET`/`POST`/`PATCH` | `/admin/jobs` | Manage postings. Admin |
 | `POST` | `/chat/purge` | Admin only. Runs the retention sweep on demand |
 | `POST` | `/chat/conversations/{id}/close` | Staff close queue threads; either person closes a direct one |
 | `GET` | `/announcements/current` | The pinned notice, or null. Any signed-in user |

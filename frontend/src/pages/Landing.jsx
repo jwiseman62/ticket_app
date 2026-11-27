@@ -43,7 +43,7 @@ export default function Landing() {
       {/* Hero */}
       <section className="hero">
         <div className="hero-inner">
-          <div className="hero-badge">Tech Help</div>
+          <div className="hero-badge">IT Help Desk</div>
 
           <h1 className="hero-title">
             Manage IT tickets <br />
@@ -167,6 +167,7 @@ export default function Landing() {
           <div className="footer-links">
             <Link to="/login">Sign In</Link>
             <Link to="/register">Register</Link>
+            <Link to="/careers">Careers</Link>
             <Link to="/terms">Terms</Link>
           </div>
           <div className="footer-contact">

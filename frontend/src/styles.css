@@ -5430,3 +5430,551 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 @media (prefers-reduced-motion: reduce) {
   .chat-bubble-alert { animation: none; }
 }
+
+/* ══════════════════════════ Careers ══════════════════════════ */
+
+.careers-page {
+  padding: 2.5rem 1rem 4rem;
+}
+
+.careers-inner {
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+.careers-head h1 {
+  margin: 1rem 0 .5rem;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.careers-lede {
+  margin: 0 0 1.5rem;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+/* Said once on the board and again on the form. Repetition is deliberate:
+   someone deep-linked straight to the form should still see it. */
+.careers-demo-note {
+  margin: 0 0 1.75rem;
+  padding: .9rem 1.1rem;
+  border: 1px solid var(--warn-border, var(--border));
+  border-left: 3px solid var(--warn, #d97706);
+  border-radius: var(--radius);
+  background: var(--warn-bg, var(--surface-2));
+  font-size: .88rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.careers-empty {
+  padding: 2rem 0;
+  color: var(--text-muted);
+}
+
+/* ── The board ── */
+
+.job-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: .9rem;
+}
+
+.job-card {
+  display: block;
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-decoration: none;
+  transition: border-color .15s, transform .12s, box-shadow .15s;
+}
+
+.job-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.job-card-top {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin-bottom: .35rem;
+}
+
+.job-card-title {
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+.job-chip {
+  padding: .1rem .5rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: .7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.job-card-summary {
+  display: block;
+  margin-bottom: .5rem;
+  font-size: .9rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.job-card-meta {
+  display: block;
+  font-size: .78rem;
+  color: var(--text-muted);
+  opacity: .85;
+}
+
+/* ── One posting ── */
+
+.job-head h1 {
+  margin: 1rem 0 .4rem;
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.job-head-meta {
+  margin: 0 0 1rem;
+  font-size: .85rem;
+  color: var(--text-muted);
+}
+
+.job-head-summary {
+  margin: 0 0 1.5rem;
+  font-size: 1.02rem;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.job-section {
+  margin-bottom: 1.9rem;
+}
+
+.job-section h2 {
+  margin: 0 0 .6rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.job-section p {
+  margin: 0 0 .8rem;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.job-section ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  line-height: 1.75;
+  color: var(--text);
+}
+
+.job-section li { margin-bottom: .35rem; }
+
+.job-apply-bar {
+  margin-top: 2.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+}
+
+.job-apply-note {
+  font-size: .82rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* ── The form ── */
+
+.apply-form { margin-top: .5rem; }
+
+.apply-section {
+  margin: 0 0 1.5rem;
+  padding: 1.25rem 1.35rem 1.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.apply-section legend {
+  padding: 0 .5rem;
+  margin-left: -.5rem;
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Self-identification is visually set apart as well as stored apart, so it
+   doesn't read as part of the same questionnaire. */
+.apply-section-eeo {
+  border-style: dashed;
+  background: var(--surface-2);
+}
+
+.apply-eeo-note {
+  margin: 0 0 1rem;
+  font-size: .85rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+.apply-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .9rem;
+}
+
+.apply-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+/* Two-character fields shouldn't get a third of the row. */
+.apply-narrow { max-width: 11rem; }
+
+.apply-form label {
+  display: block;
+  margin-bottom: .9rem;
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.apply-form input,
+.apply-form select,
+.apply-form textarea {
+  display: block;
+  width: 100%;
+  margin-top: .3rem;
+  padding: .55rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+}
+
+.apply-form input:focus,
+.apply-form select:focus,
+.apply-form textarea:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.apply-form input[readonly],
+.apply-form input:disabled {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.apply-form textarea { resize: vertical; }
+
+.apply-signature {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 1.05rem;
+}
+
+.apply-check {
+  display: flex;
+  align-items: flex-start;
+  gap: .6rem;
+  margin-bottom: .75rem;
+  font-size: .88rem;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.apply-check input[type="checkbox"] {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: .15rem;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.req { color: var(--danger); font-weight: 700; }
+
+.apply-terms {
+  margin: 0 0 .9rem;
+  padding: .85rem 1rem;
+  border-left: 3px solid var(--border);
+  background: var(--surface-2);
+  font-size: .82rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+.apply-terms-demo { border-left-color: var(--warn, #d97706); }
+
+.apply-submit {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+/* ── Confirmation ── */
+
+.apply-done {
+  padding: 2rem 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: center;
+}
+
+.apply-done h1 {
+  margin: 0 0 .9rem;
+  font-size: 1.5rem;
+  color: var(--text);
+}
+
+.apply-done p {
+  margin: 0 auto .9rem;
+  max-width: 32rem;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.apply-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.05rem;
+  color: var(--primary);
+}
+
+.apply-done-note {
+  font-size: .82rem;
+  color: var(--text-muted) !important;
+}
+
+@media (max-width: 680px) {
+  .apply-grid,
+  .apply-grid-3 { grid-template-columns: 1fr; }
+  .apply-narrow { max-width: none; }
+  .job-apply-bar { flex-direction: column; align-items: stretch; }
+  .job-apply-bar .btn { width: 100%; }
+  .apply-submit .btn { width: 100%; }
+}
+
+/* ── Application review (admin) ───────────────────────────────────────── */
+
+.app-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.app-review-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.app-review-head select {
+  padding: .4rem .6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: .85rem;
+}
+
+.app-empty { padding: 1.5rem 0; color: var(--text-muted); }
+
+.app-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+
+.app-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.app-item-head {
+  display: grid;
+  grid-template-columns: 1.3fr 1.3fr auto auto auto;
+  align-items: center;
+  gap: .9rem;
+  width: 100%;
+  padding: .8rem 1rem;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+}
+
+.app-item-head:hover { background: var(--surface-2); }
+
+.app-item-name { font-weight: 600; }
+.app-item-job  { font-size: .85rem; color: var(--text-muted); }
+
+.app-item-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .78rem;
+  color: var(--text-muted);
+}
+
+.app-item-date { font-size: .78rem; color: var(--text-muted); }
+
+.app-status {
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.app-status-new       { border-color: var(--primary); color: var(--primary); }
+.app-status-reviewing { border-color: #d97706; color: #b45309; }
+.app-status-interview { border-color: #7c3aed; color: #6d28d9; }
+.app-status-offer     { border-color: #0891b2; color: #0e7490; }
+.app-status-hired     { border-color: var(--success, #10b981);
+                        color: var(--success, #047857); }
+.app-status-rejected  { border-color: var(--border); color: var(--text-muted); }
+
+.app-detail {
+  padding: 1rem 1.1rem 1.2rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.app-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.app-detail h3 {
+  margin: 1rem 0 .5rem;
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+}
+
+.app-detail h3:first-child { margin-top: 0; }
+
+.app-row {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: .5rem;
+  padding: .2rem 0;
+  font-size: .85rem;
+}
+
+.app-row-label { color: var(--text-muted); }
+.app-row-value { color: var(--text); word-break: break-word; }
+
+.app-prose { margin-top: 1rem; }
+
+.app-prose p {
+  margin: 0;
+  padding: .7rem .85rem;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: .87rem;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* Says out loud that the omission is deliberate, so nobody files it as a bug. */
+.app-eeo-absent {
+  margin: 1rem 0 0;
+  font-size: .78rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.app-notes { margin-top: 1rem; }
+
+.app-notes label {
+  display: block;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.app-notes textarea {
+  display: block;
+  width: 100%;
+  margin: .3rem 0 .5rem;
+  padding: .55rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: .87rem;
+  resize: vertical;
+}
+
+.app-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.app-hired {
+  margin-top: 1rem;
+  padding: .8rem 1rem;
+  border: 1px solid var(--success, #10b981);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface);
+  font-size: .87rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.app-hired code {
+  padding: .1rem .4rem;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+}
+
+@media (max-width: 860px) {
+  .app-item-head { grid-template-columns: 1fr auto; row-gap: .35rem; }
+  .app-item-job, .app-item-ref, .app-item-date { grid-column: 1 / -1; }
+  .app-cols { grid-template-columns: 1fr; gap: .5rem; }
+  .app-row { grid-template-columns: 1fr; gap: 0; }
+  .app-row-label { font-size: .75rem; }
+}

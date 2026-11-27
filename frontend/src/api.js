@@ -167,6 +167,43 @@ export const updateUserEmail = (id, email) =>
 export const updateUserRole = (id, role) =>
   request(`/users/${id}/role`, { method: 'PUT', body: JSON.stringify({ role }) })
 
+// ── Careers ───────────────────────────────────────────────────────── //
+
+/* The first three need no token: an applicant has no account yet. */
+
+export const listJobs = () => request('/jobs')
+
+export const getJob = (slug) => request(`/jobs/${encodeURIComponent(slug)}`)
+
+export const submitApplication = (body) =>
+  request('/applications', { method: 'POST', body: JSON.stringify(body) })
+
+/* Review side — staff only. */
+
+export const listApplications = (status = '') =>
+  request(`/applications${status ? `?status=${encodeURIComponent(status)}` : ''}`)
+
+export const getApplication = (id) => request(`/applications/${id}`)
+
+export const reviewApplication = (id, body) =>
+  request(`/applications/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+
+export const hireApplicant = (id) =>
+  request(`/applications/${id}/hire`, { method: 'POST' })
+
+/* Postings — admin only. */
+
+export const listAllJobs = () => request('/admin/jobs')
+
+export const createJob = (body) =>
+  request('/admin/jobs', { method: 'POST', body: JSON.stringify(body) })
+
+export const updateJob = (id, body) =>
+  request(`/admin/jobs/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+
+export const toggleJob = (id) =>
+  request(`/admin/jobs/${id}/toggle`, { method: 'POST' })
+
 // ── Terms of service ──────────────────────────────────────────────── //
 
 /* Both of these stay reachable while the acceptance gate is up; every other
