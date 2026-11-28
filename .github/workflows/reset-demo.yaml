@@ -1,52 +1,110 @@
-# Nightly reset of the public demo.
-#
-# Visitors can delete tickets, change roles and register junk accounts —
-# which is good, it means they can actually try the thing. This puts it back
-# every night so the demo is always in a known-good state.
-#
-# Setup (one time):
-#   Repo -> Settings -> Secrets and variables -> Actions
-#     Secret   DEMO_RESET_TOKEN   = the value from Render's env vars
-#     Variable DEMO_API_URL       = https://your-api.onrender.com
-
 name: Reset demo data
+
+# The demo database is wiped and reseeded nightly so visitors can change
+# anything without ruining it for the next person.
+#
+# Why this file is more than a one-line curl: /admin/reset-demo returns 404
+# for EVERY failure — demo mode off, token unset on the server, token
+# mismatched — deliberately, so the endpoint isn't discoverable. Plain curl
+# exits 0 on a 404, so the naive version of this workflow reports success
+# every night while resetting nothing. Every step below checks the status
+# code and the response body, and says which of the three causes it is.
 
 on:
   schedule:
-    # 08:00 UTC = 02:00 America/Chicago (CST). GitHub runs schedules in UTC
-    # and does not follow daylight saving, so this drifts by an hour in summer.
-    - cron: "0 8 * * *"
-  workflow_dispatch:        # lets you trigger it by hand from the Actions tab
+    # 08:37 UTC — 02:37 Chicago in winter, 03:37 in summer.
+    # Deliberately not on the hour: GitHub's scheduled runs are best-effort
+    # and the :00 slot is the most heavily delayed.
+    - cron: '37 8 * * *'
+  # Gives the Actions tab a "Run workflow" button, so this can be tested
+  # now rather than by waiting until tomorrow morning.
+  workflow_dispatch:
+
+env:
+  API: https://tech-help-api.onrender.com
 
 jobs:
   reset:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
       - name: Wake the API
-        # The free tier spins down when idle. Without this the reset request
-        # itself would be the one absorbing the cold start and may time out.
+        # Render's free plan sleeps after 15 minutes idle and takes roughly
+        # a minute to come back. Without this the reset itself would be the
+        # request that absorbs the cold start.
         run: |
-          echo "Waking ${{ vars.DEMO_API_URL }} ..."
-          for i in $(seq 1 10); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
-                   "${{ vars.DEMO_API_URL }}/health" || true)
-            if [ "$code" = "200" ]; then echo "awake after $i attempt(s)"; exit 0; fi
-            echo "  attempt $i: HTTP $code, retrying in 10s"
-            sleep 10
+          for attempt in $(seq 1 20); do
+            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' \
+                     --max-time 30 "$API/health" 2>/dev/null || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "Awake after $attempt attempt(s): $(cat /tmp/health.json)"
+              exit 0
+            fi
+            echo "Attempt $attempt: HTTP $code — waiting 15s"
+            sleep 15
           done
-          echo "::warning::API did not wake within ~100s; trying the reset anyway"
+          echo "::error::The API never responded 200 on /health. Check Render."
+          exit 1
 
-      - name: Reset demo data
+      - name: Check demo mode is on
         run: |
-          response=$(curl -s -w "\n%{http_code}" --max-time 120 -X POST \
-            -H "X-Reset-Token: ${{ secrets.DEMO_RESET_TOKEN }}" \
-            "${{ vars.DEMO_API_URL }}/admin/reset-demo")
-          body=$(echo "$response" | sed '$d')
-          code=$(echo "$response" | tail -n1)
-          echo "HTTP $code"
-          echo "$body"
-          if [ "$code" != "200" ]; then
-            echo "::error::Reset failed with HTTP $code."
-            echo "::error::404 usually means DEMO_MODE is off or the token is wrong."
+          if grep -q '"demo_mode":true' /tmp/health.json; then
+            echo "demo_mode is true."
+          else
+            echo "::error::demo_mode is not true, so the reset endpoint will \
+          404 whatever token is sent. Set DEMO_MODE=true in the Render \
+          service's environment and redeploy."
             exit 1
           fi
+
+      - name: Reset demo data
+        env:
+          TOKEN: ${{ secrets.DEMO_RESET_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::The DEMO_RESET_TOKEN secret is empty or missing in \
+          this repository. Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+          code=$(curl -sS -X POST -o /tmp/reset.json -w '%{http_code}' \
+                   --max-time 120 \
+                   -H "X-Reset-Token: $TOKEN" \
+                   "$API/admin/reset-demo" 2>/dev/null || echo 000)
+
+          echo "HTTP $code"
+          echo "Response: $(cat /tmp/reset.json 2>/dev/null)"
+
+          case "$code" in
+            200) ;;
+            404)
+              echo "::error::404 from the reset endpoint. demo_mode is true \
+          (checked above), so this is the token: either DEMO_RESET_TOKEN is \
+          unset on Render, or its value there does not match this \
+          repository's secret. Copy the value from Render — GitHub secrets \
+          cannot be read back — and set the secret again."
+              exit 1 ;;
+            000)
+              echo "::error::No response. The API went away mid-request."
+              exit 1 ;;
+            *)
+              echo "::error::Unexpected HTTP $code from the reset endpoint."
+              exit 1 ;;
+          esac
+
+          # A 200 is necessary but not sufficient — confirm the body agrees.
+          if ! grep -q '"ok":true' /tmp/reset.json; then
+            echo "::error::HTTP 200 but the body did not confirm ok:true."
+            exit 1
+          fi
+
+          echo "Demo reset succeeded."
+          {
+            echo "### Demo reset succeeded"
+            echo ""
+            echo '```json'
+            cat /tmp/reset.json
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
